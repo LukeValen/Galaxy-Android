@@ -1,0 +1,35 @@
+build*/
+*.idsig
+/out/
+build*.log
+link*.log
+.vscode/
+tools/__pycache__/
+tools/cook/__pycache__/
+tools/cook/native/*.dll
+__pycache__/
+*.pyc
+/third_party/
+
+# Game dumps, disc images, and copyrighted asset data (never commit to git)
+roms/
+extracted/
+cooked/
+*.rvz
+*.iso
+*.wbfs
+*.gcm
+*.ciso
+*.zip
+*.7z
+movies.tar
+screen*.png
+tools/dolphin/
+
+# APK output
+out-mobile/apk/
+*.apk
+!out-mobile/GalaxyMobile.apk
+!out-mobile/GalaxyMobilePlus.apk
+!out-mobile/GalaxyInstaller.apk
+
