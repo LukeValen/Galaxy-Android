@@ -14,7 +14,7 @@ tags:
 # Galaxy Android - Controls & Input Guide
 
 > **Acknowledgements & References:**
-> Galaxy Android builds upon the Wii controller abstractions reconstructed in the [Petari Decompilation Project](https://github.com/SMGCommunity/Petari), the custom platform input layer pioneered by [bigmak94/GalaxyQuest](https://github.com/bigmak94/GalaxyQuest), and the mobile touch overlay implementations from [sebsies/GalaxyMobile](https://github.com/sebsies/GalaxyMobile). We extend our deepest thanks to both projects and their contributors.
+> Galaxy Android builds upon the Wii controller abstractions reconstructed in the [Petari Decompilation Project](https://github.com/SMGCommunity/Petari) and the custom platform input layer pioneered by [bigmak94/GalaxyQuest](https://github.com/bigmak94/GalaxyQuest). We extend our deepest thanks to both projects and their contributors.
 
 Galaxy Android translates Android touchscreen interactions and standard Bluetooth/USB controller events into native Wii Remote + Nunchuk signals with zero emulation latency.
 

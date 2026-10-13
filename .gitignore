@@ -26,10 +26,7 @@ movies.tar
 screen*.png
 tools/dolphin/
 
-# APK output
-out-mobile/apk/
+# APK output and builds
+out-mobile/
 *.apk
-!out-mobile/GalaxyMobile.apk
-!out-mobile/GalaxyMobilePlus.apk
-!out-mobile/GalaxyInstaller.apk
 

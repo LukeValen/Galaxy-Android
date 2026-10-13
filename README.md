@@ -19,9 +19,8 @@ This project is made possible through the pioneering work of the community:
 
 - **[bigmak94 / GalaxyQuest](https://github.com/bigmak94/GalaxyQuest)**: For the standalone mobile/ARM port architecture, memory reservation shims, and the little-endian asset cooker toolchain.
 - **[Petari Decompilation Project](https://github.com/SMGCommunity/Petari)**: For the reverse-engineering and C++ decompilation of *Super Mario Galaxy*.
-- **[sebsies / GalaxyMobile](https://github.com/sebsies/GalaxyMobile)**: For mobile Android adaptations and touch overlay concepts.
 
-We express our deepest thanks to all contributors and developers across these projects for keeping game preservation alive.
+We express our deepest thanks to both projects and their contributors for keeping game preservation alive.
 
 ---
 
@@ -80,14 +79,14 @@ With the dedicated **GalaxyInstaller** app, your phone does everything on-device
 
 1. **Place your game dump on your phone**:
    - Copy your legally dumped game disc (`.rvz`, `.wbfs`, `.iso`, or `.wia`) into your phone's **`Download`** folder.
-2. **Install the APKs**:
-   - Main Game: [`out-mobile/GalaxyMobile.apk`](out-mobile/GalaxyMobile.apk)
-   - On-Device Cooker: [`out-mobile/GalaxyInstaller.apk`](out-mobile/GalaxyInstaller.apk)
+2. **Download and install the APKs from [Releases](https://github.com/OpenPort-Labs/Galaxy-Android/releases/latest)**:
+   - Main Game: **`GalaxyAndroid.apk`** (or `GalaxyMobile.apk`)
+   - On-Device Cooker: **`GalaxyInstaller.apk`**
 3. **Open GalaxyInstaller**:
    - Grant storage permissions. The app automatically detects your game dump in `Download`.
    - Tap **"Start Cooking Game Data"**.
 4. **Launch & Play**:
-   - Tap **"Launch GalaxyMobile"** and enjoy native 60 FPS Super Mario Galaxy on Android!
+   - Tap **"Launch Game"** and enjoy native 60 FPS Super Mario Galaxy on Android!
 
 ---
 

@@ -19,7 +19,7 @@ tags:
 Galaxy Android is a **100% native Android ARM64 port** of *Super Mario Galaxy*. It is not an emulator; the original game logic and engine routines execute directly on the device's CPU cores using native Android APIs.
 
 > **Acknowledgements & Foundation:**
-> This project builds upon the foundational reverse-engineering and decompilation work of the [Petari Decompilation Project](https://github.com/SMGCommunity/Petari) and the groundbreaking standalone mobile platform architecture developed by [bigmak94/GalaxyQuest](https://github.com/bigmak94/GalaxyQuest). We also acknowledge [sebsies/GalaxyMobile](https://github.com/sebsies/GalaxyMobile) for mobile touch adaptations. We express our utmost gratitude to these communities and creators.
+> This project builds upon the foundational reverse-engineering and decompilation work of the [Petari Decompilation Project](https://github.com/SMGCommunity/Petari) and the groundbreaking standalone mobile platform architecture developed by [bigmak94/GalaxyQuest](https://github.com/bigmak94/GalaxyQuest). We express our utmost gratitude to these communities and creators.
 
 ---
 

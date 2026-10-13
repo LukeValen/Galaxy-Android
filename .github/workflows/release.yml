@@ -1,0 +1,115 @@
+name: Build & Release Galaxy Android
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Tag name for the release (e.g. v0.0.1)'
+        required: true
+        default: 'v0.0.1'
+
+permissions:
+  contents: write
+
+jobs:
+  build-android:
+    name: Build Android APKs
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Android NDK & SDK Tools
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r25c
+          add-to-path: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install Build Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build zipalign
+
+      - name: Build Native Game Engine (libgame.so)
+        run: |
+          mkdir -p build-mobile
+          cmake -S . -B build-mobile -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-30 \
+            -DTARGET_MOBILE=ON \
+            -DCMAKE_BUILD_TYPE=Release
+          ninja -C build-mobile game
+
+      - name: Package Galaxy Android APK
+        run: |
+          mkdir -p out-mobile
+          ./package_mobile_apk.sh || python3 package_mobile_apk.py
+
+      - name: Upload APK Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: galaxy-android-apks
+          path: out-mobile/*.apk
+
+  release:
+    name: Create GitHub Release
+    needs: build-android
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Download APK Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: galaxy-android-apks
+          path: release-apks
+
+      - name: Determine Release Tag
+        id: vars
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "TAG_NAME=${{ github.event.inputs.tag_name }}" >> $GITHUB_OUTPUT
+          else
+            echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.vars.outputs.TAG_NAME }}
+          name: Galaxy Android ${{ steps.vars.outputs.TAG_NAME }}
+          draft: false
+          prerelease: false
+          files: release-apks/*.apk
+          body: |
+            ### Galaxy Android ${{ steps.vars.outputs.TAG_NAME }}
+            
+            **100% Native ARM64 Android Port of Super Mario Galaxy**
+            
+            #### Features
+            - **Native Hor+ Ultrawide rendering** (OpenGL ES 3.2, zero emulation overhead)
+            - **Frosted glass minimalist on-screen touch controls** with dynamic joystick & laser tether
+            - **1:1 direct finger tracking** for Star Pointer & Star Bit gathering
+            - **Plug-and-play Bluetooth & USB gamepad support** (Xbox, PlayStation, Switch Pro, Kishi, Backbone)
+            - **100% PC-Less on-device installer** (`GalaxyInstaller.apk`)
+            
+            #### How to Install
+            1. Download `GalaxyInstaller.apk` and `GalaxyMobile.apk` (or `GalaxyMobilePlus.apk` for mods).
+            2. Follow the [Installation Guide](https://github.com/OpenPort-Labs/Galaxy-Android/blob/main/docs/INSTALLATION.md).
+            
+            *Legal Notice: You must provide your own legally dumped Wii disc image. No proprietary Nintendo assets are included.*
