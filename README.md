@@ -1,5 +1,9 @@
 # Galaxy Android
 
+<p align="center">
+  <img src="docs/images/logo.png" width="140" alt="Galaxy Android Logo" />
+</p>
+
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
 [![Platform: Android ARM64](https://img.shields.io/badge/Platform-Android%20ARM64-brightgreen.svg)](docs/TECHNICAL.md)
 [![Graphics: OpenGL ES 3.2](https://img.shields.io/badge/Graphics-OpenGL%20ES%203.2-orange.svg)](docs/TECHNICAL.md)
