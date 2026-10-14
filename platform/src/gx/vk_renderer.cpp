@@ -290,6 +290,19 @@ bool VkRenderer::createSwapchain() {
 }
 
 bool VkRenderer::createRenderPasses() {
+    if (mPresentRenderPass != VK_NULL_HANDLE) {
+        vkDestroyRenderPass(mDevice, mPresentRenderPass, nullptr);
+        mPresentRenderPass = VK_NULL_HANDLE;
+    }
+    if (mEfbRenderPass != VK_NULL_HANDLE) {
+        vkDestroyRenderPass(mDevice, mEfbRenderPass, nullptr);
+        mEfbRenderPass = VK_NULL_HANDLE;
+    }
+
+    if (mDepthFormat == VK_FORMAT_UNDEFINED) {
+        mDepthFormat = findSupportedDepthFormat();
+    }
+
     // Present render pass (drawing to swapchain)
     VkAttachmentDescription colorAttachment{};
     colorAttachment.format = mSwapchainFormat;
@@ -342,11 +355,15 @@ bool VkRenderer::createRenderPasses() {
     efbAttachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     efbAttachments[0].finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-    efbAttachments[1].format = VK_FORMAT_D24_UNORM_S8_UINT;
+    bool hasStencil = (mDepthFormat == VK_FORMAT_D32_SFLOAT_S8_UINT ||
+                       mDepthFormat == VK_FORMAT_D24_UNORM_S8_UINT ||
+                       mDepthFormat == VK_FORMAT_D16_UNORM_S8_UINT);
+
+    efbAttachments[1].format = mDepthFormat;
     efbAttachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
     efbAttachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     efbAttachments[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    efbAttachments[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    efbAttachments[1].stencilLoadOp = hasStencil ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     efbAttachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     efbAttachments[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     efbAttachments[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
@@ -460,6 +477,28 @@ bool VkRenderer::createDescriptorLayouts() {
     return vkCreateDescriptorPool(mDevice, &poolInfo, nullptr, &mDescriptorPool) == VK_SUCCESS;
 }
 
+VkFormat VkRenderer::findSupportedDepthFormat() {
+    const VkFormat depthFormats[] = {
+        VK_FORMAT_D32_SFLOAT_S8_UINT,
+        VK_FORMAT_D24_UNORM_S8_UINT,
+        VK_FORMAT_D16_UNORM_S8_UINT,
+        VK_FORMAT_D32_SFLOAT,
+        VK_FORMAT_D16_UNORM
+    };
+
+    for (VkFormat format : depthFormats) {
+        VkFormatProperties props;
+        vkGetPhysicalDeviceFormatProperties(mPhysicalDevice, format, &props);
+        if ((props.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) ==
+            VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) {
+            LOGI("Selected Vulkan Depth/Stencil Format: %d", format);
+            return format;
+        }
+    }
+    LOGW("No optimal depth/stencil format found, defaulting to D16_UNORM");
+    return VK_FORMAT_D16_UNORM;
+}
+
 uint32_t VkRenderer::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
     VkPhysicalDeviceMemoryProperties memProperties;
     vkGetPhysicalDeviceMemoryProperties(mPhysicalDevice, &memProperties);
@@ -469,13 +508,17 @@ uint32_t VkRenderer::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags p
             return i;
         }
     }
-    return 0;
+    return ~0u;
 }
 
 VkTarget VkRenderer::createTarget(int w, int h) {
     VkTarget t{};
     t.width = w;
     t.height = h;
+
+    if (mDepthFormat == VK_FORMAT_UNDEFINED) {
+        mDepthFormat = findSupportedDepthFormat();
+    }
 
     // 1. Color attachment image (RGBA8)
     VkImageCreateInfo ici{};
@@ -501,10 +544,17 @@ VkTarget VkRenderer::createTarget(int w, int h) {
     VkMemoryRequirements memReqs;
     vkGetImageMemoryRequirements(mDevice, t.colorImage, &memReqs);
 
+    uint32_t colorMemType = findMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    if (colorMemType == ~0u) {
+        LOGE("Failed to find suitable device memory type for target color image");
+        destroyTarget(t);
+        return {};
+    }
+
     VkMemoryAllocateInfo mai{};
     mai.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     mai.allocationSize = memReqs.size;
-    mai.memoryTypeIndex = findMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    mai.memoryTypeIndex = colorMemType;
     if (vkAllocateMemory(mDevice, &mai, nullptr, &t.colorMemory) != VK_SUCCESS ||
         vkBindImageMemory(mDevice, t.colorImage, t.colorMemory, 0) != VK_SUCCESS) {
         destroyTarget(t);
@@ -524,9 +574,9 @@ VkTarget VkRenderer::createTarget(int w, int h) {
         return {};
     }
 
-    // 2. Depth/stencil attachment image (D24S8)
+    // 2. Depth/stencil attachment image (dynamic supported depth format)
     VkImageCreateInfo dici = ici;
-    dici.format = VK_FORMAT_D24_UNORM_S8_UINT;
+    dici.format = mDepthFormat;
     dici.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
 
     if (vkCreateImage(mDevice, &dici, nullptr, &t.depthImage) != VK_SUCCESS) {
@@ -535,20 +585,34 @@ VkTarget VkRenderer::createTarget(int w, int h) {
     }
 
     vkGetImageMemoryRequirements(mDevice, t.depthImage, &memReqs);
+    uint32_t depthMemType = findMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    if (depthMemType == ~0u) {
+        LOGE("Failed to find suitable device memory type for target depth image");
+        destroyTarget(t);
+        return {};
+    }
+
     mai.allocationSize = memReqs.size;
-    mai.memoryTypeIndex = findMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    mai.memoryTypeIndex = depthMemType;
     if (vkAllocateMemory(mDevice, &mai, nullptr, &t.depthMemory) != VK_SUCCESS ||
         vkBindImageMemory(mDevice, t.depthImage, t.depthMemory, 0) != VK_SUCCESS) {
         destroyTarget(t);
         return {};
     }
 
+    VkImageAspectFlags depthAspect = VK_IMAGE_ASPECT_DEPTH_BIT;
+    if (mDepthFormat == VK_FORMAT_D32_SFLOAT_S8_UINT ||
+        mDepthFormat == VK_FORMAT_D24_UNORM_S8_UINT ||
+        mDepthFormat == VK_FORMAT_D16_UNORM_S8_UINT) {
+        depthAspect |= VK_IMAGE_ASPECT_STENCIL_BIT;
+    }
+
     VkImageViewCreateInfo divci{};
     divci.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     divci.image = t.depthImage;
     divci.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    divci.format = VK_FORMAT_D24_UNORM_S8_UINT;
-    divci.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+    divci.format = mDepthFormat;
+    divci.subresourceRange.aspectMask = depthAspect;
     divci.subresourceRange.levelCount = 1;
     divci.subresourceRange.layerCount = 1;
     if (vkCreateImageView(mDevice, &divci, nullptr, &t.depthView) != VK_SUCCESS) {
@@ -634,26 +698,99 @@ void VkRenderer::present(const VkTarget& target, int vpX, int vpY, int vpW, int 
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     vkBeginCommandBuffer(mCommandBuffer, &beginInfo);
 
-    VkRenderPassBeginInfo rpInfo{};
-    rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    rpInfo.renderPass = mPresentRenderPass;
-    rpInfo.framebuffer = mSwapchainFramebuffers[imageIndex];
-    rpInfo.renderArea.offset = {0, 0};
-    rpInfo.renderArea.extent = {(uint32_t)mWidth, (uint32_t)mHeight};
+    if (target.colorImage != VK_NULL_HANDLE && vpW > 0 && vpH > 0) {
+        // Transition swapchain image from UNDEFINED to TRANSFER_DST_OPTIMAL
+        VkImageMemoryBarrier barrierToDst{};
+        barrierToDst.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        barrierToDst.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        barrierToDst.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        barrierToDst.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrierToDst.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrierToDst.image = mSwapchainImages[imageIndex];
+        barrierToDst.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        barrierToDst.subresourceRange.levelCount = 1;
+        barrierToDst.subresourceRange.layerCount = 1;
+        barrierToDst.srcAccessMask = 0;
+        barrierToDst.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
 
-    VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
-    rpInfo.clearValueCount = 1;
-    rpInfo.pClearValues = &clearColor;
+        // Transition target color image from SHADER_READ_ONLY_OPTIMAL to TRANSFER_SRC_OPTIMAL
+        VkImageMemoryBarrier barrierToSrc{};
+        barrierToSrc.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        barrierToSrc.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        barrierToSrc.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        barrierToSrc.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrierToSrc.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrierToSrc.image = target.colorImage;
+        barrierToSrc.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        barrierToSrc.subresourceRange.levelCount = 1;
+        barrierToSrc.subresourceRange.layerCount = 1;
+        barrierToSrc.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        barrierToSrc.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
 
-    vkCmdBeginRenderPass(mCommandBuffer, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
-    vkCmdEndRenderPass(mCommandBuffer);
+        VkImageMemoryBarrier preBarriers[2] = {barrierToDst, barrierToSrc};
+        vkCmdPipelineBarrier(mCommandBuffer,
+                             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                             VK_PIPELINE_STAGE_TRANSFER_BIT,
+                             0, 0, nullptr, 0, nullptr, 2, preBarriers);
+
+        // Blit target color image into swapchain
+        VkImageBlit blitRegion{};
+        blitRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        blitRegion.srcSubresource.layerCount = 1;
+        blitRegion.srcOffsets[0] = {0, 0, 0};
+        blitRegion.srcOffsets[1] = {target.width, target.height, 1};
+        blitRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        blitRegion.dstSubresource.layerCount = 1;
+        blitRegion.dstOffsets[0] = {vpX, vpY, 0};
+        blitRegion.dstOffsets[1] = {vpX + vpW, vpY + vpH, 1};
+
+        vkCmdBlitImage(mCommandBuffer,
+                       target.colorImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                       mSwapchainImages[imageIndex], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                       1, &blitRegion, VK_FILTER_LINEAR);
+
+        // Transition swapchain image to PRESENT_SRC_KHR
+        VkImageMemoryBarrier barrierToPresent = barrierToDst;
+        barrierToPresent.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        barrierToPresent.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        barrierToPresent.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrierToPresent.dstAccessMask = 0;
+
+        // Transition target color image back to SHADER_READ_ONLY_OPTIMAL
+        VkImageMemoryBarrier barrierBackToShader = barrierToSrc;
+        barrierBackToShader.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        barrierBackToShader.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        barrierBackToShader.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        barrierBackToShader.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+        VkImageMemoryBarrier postBarriers[2] = {barrierToPresent, barrierBackToShader};
+        vkCmdPipelineBarrier(mCommandBuffer,
+                             VK_PIPELINE_STAGE_TRANSFER_BIT,
+                             VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+                             0, 0, nullptr, 0, nullptr, 2, postBarriers);
+    } else {
+        // Fallback clear render pass
+        VkRenderPassBeginInfo rpInfo{};
+        rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        rpInfo.renderPass = mPresentRenderPass;
+        rpInfo.framebuffer = mSwapchainFramebuffers[imageIndex];
+        rpInfo.renderArea.offset = {0, 0};
+        rpInfo.renderArea.extent = {(uint32_t)mWidth, (uint32_t)mHeight};
+
+        VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
+        rpInfo.clearValueCount = 1;
+        rpInfo.pClearValues = &clearColor;
+
+        vkCmdBeginRenderPass(mCommandBuffer, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
+        vkCmdEndRenderPass(mCommandBuffer);
+    }
 
     vkEndCommandBuffer(mCommandBuffer);
 
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     VkSemaphore waitSemaphores[] = {mImageAvailableSem};
-    VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+    VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT};
     submitInfo.waitSemaphoreCount = 1;
     submitInfo.pWaitSemaphores = waitSemaphores;
     submitInfo.pWaitDstStageMask = waitStages;

@@ -71,6 +71,14 @@ struct GpuState {
         // Table 3: B=2, B=2, B=2, A=3 -> lo: (2<<2)|2 = 0x0A, hi: (3<<2)|2 = 0x0E (.bbba)
         bp[0xFC] = 0x00000A;
         bp[0xFD] = 0x00000E;
+
+        // Default GX channel colors (GXInit.c):
+        // 0x100A / 0x100B: Ambient 0 & 1 (black: RGBA 0, 0, 0, 255)
+        xf.regs[0x0A] = 0x000000FF;
+        xf.regs[0x0B] = 0x000000FF;
+        // 0x100C / 0x100D: Material 0 & 1 (white: RGBA 255, 255, 255, 255)
+        xf.regs[0x0C] = 0xFFFFFFFF;
+        xf.regs[0x0D] = 0xFFFFFFFF;
     }
 };
 

@@ -252,18 +252,22 @@ std::string genVertexShader(const ShaderUid& u) {
                 // characters' rim light, LightFunction::loadActorLightInfo):
                 // in VR it belongs on the eye, or rims land mid-face.
                 o.w("      if (vrDraw && lpos == vec3(0.0)) lpos = vrEyePos.xyz;\n");
+                o.w("      vec3 ldir;\n      float att = 1.0;\n");
                 if (!atten) {
-                    o.w("      vec3 ldir = normalize(lpos - pos); float att = 1.0;\n");
+                    o.w("      ldir = (dot(lpos, lpos) > 1e-6) ? normalize(lpos - pos) : normalize(-pos);\n");
                 } else if (spot) {
-                    o.w("      vec3 ldir = lpos - pos; float d2 = dot(ldir, ldir); float d = sqrt(max(d2, 1e-4)); ldir = ldir / d;\n");
-                    o.w("      float a = max(0.0, dot(ldir, ldirv));\n");
+                    o.w("      vec3 lv = (dot(lpos, lpos) > 1e-6) ? (lpos - pos) : -pos;\n");
+                    o.w("      float d2 = dot(lv, lv); float d = sqrt(max(d2, 1e-4)); ldir = lv / d;\n");
+                    o.w("      vec3 dv = (dot(ldirv, ldirv) > 1e-6) ? ldirv : vec3(0.0, 0.0, -1.0);\n");
+                    o.w("      float a = max(0.0, dot(ldir, dv));\n");
                     o.w("      float distDenom = dot(ldist, vec3(1.0, d, d2));\n");
-                    o.w("      float att = (distDenom > 1e-5) ? max(0.0, dot(lcos, vec3(1.0, a, a * a))) / distDenom : 1.0;\n");
+                    o.w("      att = (distDenom > 1e-5) ? max(0.0, dot(lcos, vec3(1.0, a, a * a))) / distDenom : 1.0;\n");
                 } else {
-                    o.w("      vec3 ldir = normalize(lpos);\n");
-                    o.w("      float a = (dot(nrm, ldir) >= 0.0) ? max(0.0, dot(nrm, ldirv)) : 0.0;\n");
+                    o.w("      ldir = (dot(lpos, lpos) > 1e-6) ? normalize(lpos) : normalize(-pos);\n");
+                    o.w("      vec3 dv = (dot(ldirv, ldirv) > 1e-6) ? ldirv : vec3(0.0, 0.0, -1.0);\n");
+                    o.w("      float a = (dot(nrm, ldir) >= 0.0) ? max(0.0, dot(nrm, dv)) : 0.0;\n");
                     o.w("      float distDenom = dot(ldist, vec3(1.0, a, a * a));\n");
-                    o.w("      float att = (distDenom > 1e-5) ? max(0.0, dot(lcos, vec3(1.0, a, a * a))) / distDenom : 1.0;\n");
+                    o.w("      att = (distDenom > 1e-5) ? max(0.0, dot(lcos, vec3(1.0, a, a * a))) / distDenom : 1.0;\n");
                 }
                 const char* dif = diffuse == 0 ? "1.0" : diffuse == 1 ? "dot(ldir, nrm)" : "max(0.0, dot(ldir, nrm))";
                 o.w("      lit += att * %s * lcol.%s;\n", dif, sw);
@@ -349,9 +353,8 @@ std::string genVertexShader(const ShaderUid& u) {
         }
         if ((u.screenTexGens >> i) & 1) {
             // A capture of the screen sampled where the vertex lands on it.
-            // Works for VR, stereo, and native flat mobile screens:
-            // maps vertex clip position to top-down normalized screen UV.
-            o.w("    t = vec3((clipPos.x + clipPos.w) * 0.5, (clipPos.w - clipPos.y) * 0.5, clipPos.w);\n");
+            // Maps vertex clip position to GL normalized screen UV (bottom-left origin).
+            o.w("    t = vec3((clipPos.x + clipPos.w) * 0.5, (clipPos.y + clipPos.w) * 0.5, clipPos.w);\n");
         }
         o.w("    v_tex%u = t;\n  }\n", i);
     }

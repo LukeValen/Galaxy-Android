@@ -63,6 +63,7 @@ private:
     bool createDescriptorLayouts();
 
     uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
+    VkFormat findSupportedDepthFormat();
 
     bool mInitialized = false;
     ANativeWindow* mWindow = nullptr;
@@ -80,6 +81,7 @@ private:
     VkSurfaceKHR mSurface = VK_NULL_HANDLE;
     VkSwapchainKHR mSwapchain = VK_NULL_HANDLE;
     VkFormat mSwapchainFormat = VK_FORMAT_R8G8B8A8_UNORM;
+    VkFormat mDepthFormat = VK_FORMAT_UNDEFINED;
     std::vector<VkImage> mSwapchainImages;
     std::vector<VkImageView> mSwapchainImageViews;
     std::vector<VkFramebuffer> mSwapchainFramebuffers;

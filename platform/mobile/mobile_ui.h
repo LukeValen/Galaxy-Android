@@ -122,6 +122,29 @@ private:
     bool mFingerDownOnB = false;
     bool mFingerDownOnZ = false;
     bool mFingerDownOnSpin = false;
+    bool mFingerDownOnPlus = false;
+
+    // Multi-touch Pointer Roles
+    enum class TouchRole {
+        NONE,
+        STICK,
+        DPAD,
+        BTN_A,
+        BTN_B,
+        BTN_Z,
+        BTN_SPIN,
+        BTN_PLUS,
+        STAR_POINTER
+    };
+
+    struct TouchPoint {
+        int32_t id = -1;
+        TouchRole role = TouchRole::NONE;
+        float startX = 0.0f;
+        float startY = 0.0f;
+        int64_t startTime = 0;
+    };
+    TouchPoint mTouches[10];
 
     // Full Touch Gesture & Tap State
     int mTapPendingFrames = 0;

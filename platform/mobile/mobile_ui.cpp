@@ -423,10 +423,9 @@ bool UIOverlay::init() {
 }
 
 void UIOverlay::update(PortPadState& pad, int& spinFrames) {
-    // 1. Decay virtual tap pulse for full-touch controls
+    // 1. Decay virtual tap pulse for full-touch controls (Title screen only)
     if (mTapDelayFrames > 0) {
         mTapDelayFrames--;
-        // 1-frame target hover window so game engine registers isPointing before A press
         pad.buttons &= ~0x0800;
         mBtnAPressed = false;
     } else if (mTapPendingFrames > 0) {
@@ -435,29 +434,51 @@ void UIOverlay::update(PortPadState& pad, int& spinFrames) {
         if (isTitle) {
             pad.buttons |= 0x0C00; // WPAD_BUTTON_A | WPAD_BUTTON_B for title screen
             mBtnBPressed = true;
+            mBtnAPressed = true;
         } else {
-            pad.buttons |= 0x0800; // WPAD_BUTTON_A for menus, dialogue, save file select
-            mBtnBPressed = false;
-        }
-        mBtnAPressed = true;
-    } else {
-        if (!mFingerDownOnA) {
-            pad.buttons &= ~0x0800;
-            mBtnAPressed = false;
-        }
-        if (!mFingerDownOnB) {
-            pad.buttons &= ~0x0400;
-            mBtnBPressed = false;
+            pad.buttons |= 0x0800;
+            mBtnAPressed = true;
         }
     }
 
-    if (!mFingerDownOnZ) {
+    // Direct button states controlled exclusively by active touches
+    if (mFingerDownOnA) {
+        pad.buttons |= 0x0800; // WPAD_BUTTON_A
+        mBtnAPressed = true;
+    } else if (mTapPendingFrames <= 0) {
+        pad.buttons &= ~0x0800;
+        mBtnAPressed = false;
+    }
+
+    if (mFingerDownOnB) {
+        pad.buttons |= 0x0400; // WPAD_BUTTON_B
+        mBtnBPressed = true;
+    } else if (mTapPendingFrames <= 0) {
+        pad.buttons &= ~0x0400;
+        mBtnBPressed = false;
+    }
+
+    if (mFingerDownOnZ) {
+        pad.buttons |= 0x2000; // WPAD_BUTTON_Z
+        mBtnZPressed = true;
+    } else {
         pad.buttons &= ~0x2000;
         mBtnZPressed = false;
     }
 
-    if (!mFingerDownOnSpin && spinFrames <= 0) {
+    if (mFingerDownOnSpin) {
+        spinFrames = 6;
+        mBtnSpinPressed = true;
+    } else if (spinFrames <= 0) {
         mBtnSpinPressed = false;
+    }
+
+    if (mFingerDownOnPlus) {
+        pad.buttons |= 0x0010; // WPAD_BUTTON_PLUS
+        mBtnPlusPressed = true;
+    } else {
+        pad.buttons &= ~0x0010;
+        mBtnPlusPressed = false;
     }
 
     // Always maintain valid pointer position
@@ -673,7 +694,7 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
         float contentW = drawerW - padX * 2.0f;
         float contentTop = mPlusEdition ? (112.0f * uiScale) : (68.0f * uiScale);
         float contentBottom = h - 56.0f * uiScale;
-        float totalContentH = (mSettingsTab == 0 || !mPlusEdition) ? (685.0f * uiScale) : (340.0f * uiScale);
+        float totalContentH = (mSettingsTab == 0 || !mPlusEdition) ? (800.0f * uiScale) : (340.0f * uiScale);
         float maxScroll = std::max(0.0f, totalContentH - (contentBottom - contentTop));
 
         // 1. Move Gesture for Smooth Scrolling
@@ -777,12 +798,26 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                             mDirty = true;
                         }
                         // Row 10: Hardware Monitor HUD
-                        else if (contentRelY >= 550.0f * uiScale && contentRelY <= 610.0f * uiScale) {
+                        else if (contentRelY >= 550.0f * uiScale && contentRelY < 608.0f * uiScale) {
                             float segW = contentW / 3.0f;
                             int idx = (int)((px - (drawerX + padX)) / segW);
                             if (idx <= 0) mSettings.perfHudMode = 0; // Off
                             else if (idx == 1) mSettings.perfHudMode = 1; // FPS
                             else mSettings.perfHudMode = 2; // Full Stats
+                        }
+                        // Row 11: Target Frame Rate
+                        else if (contentRelY >= 608.0f * uiScale && contentRelY < 666.0f * uiScale) {
+                            float segW = contentW / 3.0f;
+                            int idx = (int)((px - (drawerX + padX)) / segW);
+                            if (idx <= 0) mSettings.targetFps = 60;
+                            else if (idx == 1) mSettings.targetFps = 90;
+                            else mSettings.targetFps = 120;
+                        }
+                        // Row 12: Graphics Backend
+                        else if (contentRelY >= 666.0f * uiScale && contentRelY < 724.0f * uiScale) {
+                            float midX = drawerX + padX + contentW * 0.5f;
+                            if (px < midX) mSettings.graphicsBackend = 0; // OpenGL ES 3.2
+                            else mSettings.graphicsBackend = 1; // Vulkan 1.1
                         }
                     } else {
                         // Advanced Tab items
@@ -888,29 +923,27 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
     mBtnDpadUp = false;
     mBtnDpadDown = false;
 
-    // Button layout positions - Ergonomic arc clear of HUD
+    // Button layout positions - Ergonomic arc matching render exactly
     float btnBaseX = w - 150.0f * scale + mSettings.buttonOffsetX;
     float btnBaseY = h - 150.0f * scale + mSettings.buttonOffsetY;
 
     // A (Jump) - Primary action
     float aX = btnBaseX, aY = btnBaseY, aR = 54.0f * scale;
-    // B (Shoot Star Bit) - Upper left of A, completely elevated above bottom HUD
+    // B (Shoot Star Bit) - Left of A, elevated comfortably
     float bX = btnBaseX - 110.0f * scale, bY = btnBaseY - 20.0f * scale, bR = 45.0f * scale;
-    // SPIN - Directly above A
-    float spinX = btnBaseX + 25.0f * scale, spinY = btnBaseY - 125.0f * scale, spinR = 48.0f * scale;
+    // SPIN - Above A, shifted slightly right for natural thumb roll
+    float spinX = btnBaseX + 30.0f * scale, spinY = btnBaseY - 125.0f * scale, spinR = 48.0f * scale;
     // Z (Crouch) - Upper left of A
-    float zX = btnBaseX - 75.0f * scale, zY = btnBaseY - 110.0f * scale, zR = 44.0f * scale;
+    float zX = btnBaseX - 85.0f * scale, zY = btnBaseY - 115.0f * scale, zR = 44.0f * scale;
     // Plus (+) - Top right
     float plusX = w - 65.0f * scale, plusY = 65.0f * scale, plusR = 34.0f * scale;
 
-    // Camera D-Pad position - Elevated in upper section, 100% isolated from joystick
+    // Camera D-Pad position
     float baseDpadX = mSettings.dpadOnRight ? (w - 140.0f * scale) : (130.0f * scale);
     float baseDpadY = mSettings.dpadOnRight ? (170.0f * scale) : (160.0f * scale);
     float dpadX = baseDpadX + mSettings.dpadOffsetX;
     float dpadY = baseDpadY + mSettings.dpadOffsetY;
-    float dpadArmDist = 36.0f * scale;
-    float dpadArmR = 22.0f * scale;
-    float dpadTotalR = (dpadArmDist + dpadArmR) * 1.15f;
+    float dpadTotalR = 58.0f * scale;
 
     // Stick default position - Bottom left thumb area
     float defaultStickX = 175.0f * scale + mSettings.stickOffsetX;
@@ -918,8 +951,11 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
     float stickBaseR = 95.0f * scale;
     float stickMaxR = 100.0f * scale;
 
-    // Complete release: when all fingers are lifted or gesture canceled
+    // 1. Complete release: when all fingers are lifted or gesture canceled
     if (action == AMOTION_EVENT_ACTION_UP || action == AMOTION_EVENT_ACTION_CANCEL) {
+        for (int i = 0; i < 10; i++) {
+            mTouches[i] = {};
+        }
         mStickPointerId = -1;
         mStickKnobX = mStickBaseX;
         mStickKnobY = mStickBaseY;
@@ -931,6 +967,7 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
         mFingerDownOnB = false;
         mFingerDownOnZ = false;
         mFingerDownOnSpin = false;
+        mFingerDownOnPlus = false;
         mBtnAPressed = mBtnBPressed = mBtnZPressed = mBtnSpinPressed = mBtnPlusPressed = false;
         mBtnDpadLeft = mBtnDpadRight = mBtnDpadUp = mBtnDpadDown = false;
         mDirty = true;
@@ -942,21 +979,14 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
             float py = AMotionEvent_getY(event, pointerIndex);
             float fdx = px - mTouchStartX;
             float fdy = py - mTouchStartY;
-            if (dur < 350 && (fdx * fdx + fdy * fdy <= 45.0f * uiScale * 45.0f * uiScale)) {
-                if (now - mLastTapTime < 320) {
-                    spinFrames = 6;
-                    mBtnSpinPressed = true;
-                    mLastTapTime = 0;
-                } else {
-                    mTapDelayFrames = 0;
-                    mTapPendingFrames = 6;
-                    mLastTapTime = now;
-                }
+            bool isTitle = (port_is_title_screen() != 0);
+            if (isTitle && dur < 350 && (fdx * fdx + fdy * fdy <= 45.0f * uiScale * 45.0f * uiScale)) {
+                mTapDelayFrames = 0;
+                mTapPendingFrames = 6;
             }
             mTouchPointerId = -1;
         }
 
-        pad.buttons = 0; // Clean release - update() will handle tap pulse if active
         pad.pointerValid = 1;
         pad.pointerX = mPointerX;
         pad.pointerY = mPointerY;
@@ -964,98 +994,153 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
         return true;
     }
 
-    // Single finger release during multi-touch
+    // 2. Single finger release during multi-touch
     if (action == AMOTION_EVENT_ACTION_POINTER_UP) {
         int32_t liftedPid = AMotionEvent_getPointerId(event, pointerIndex);
-        if (liftedPid == mStickPointerId) {
-            mStickPointerId = -1;
-            mStickKnobX = mStickBaseX;
-            mStickKnobY = mStickBaseY;
-            pad.stickX = 0.0f;
-            pad.stickY = 0.0f;
-            mDirty = true;
+        for (int i = 0; i < 10; i++) {
+            if (mTouches[i].id == liftedPid) {
+                if (mTouches[i].role == TouchRole::STICK) {
+                    mStickPointerId = -1;
+                    mStickKnobX = mStickBaseX;
+                    mStickKnobY = mStickBaseY;
+                    pad.stickX = 0.0f;
+                    pad.stickY = 0.0f;
+                }
+                mTouches[i] = {};
+            }
         }
         if (liftedPid == mTouchPointerId) {
-            int64_t now = currentTimeMs();
-            int64_t dur = now - mTouchStartTime;
-            float px = AMotionEvent_getX(event, pointerIndex);
-            float py = AMotionEvent_getY(event, pointerIndex);
-            float fdx = px - mTouchStartX;
-            float fdy = py - mTouchStartY;
-            if (dur < 350 && (fdx * fdx + fdy * fdy <= 45.0f * uiScale * 45.0f * uiScale)) {
-                if (now - mLastTapTime < 320) {
-                    spinFrames = 6;
-                    mBtnSpinPressed = true;
-                    mLastTapTime = 0;
-                } else {
-                    mTapDelayFrames = 0;
+            bool isTitle = (port_is_title_screen() != 0);
+            if (isTitle) {
+                int64_t now = currentTimeMs();
+                int64_t dur = now - mTouchStartTime;
+                float px = AMotionEvent_getX(event, pointerIndex);
+                float py = AMotionEvent_getY(event, pointerIndex);
+                float fdx = px - mTouchStartX;
+                float fdy = py - mTouchStartY;
+                if (dur < 350 && (fdx * fdx + fdy * fdy <= 45.0f * uiScale * 45.0f * uiScale)) {
                     mTapPendingFrames = 6;
-                    mLastTapTime = now;
                 }
             }
             mTouchPointerId = -1;
         }
+        mDirty = true;
     }
 
-    // Touchscreen Star Pointer acquisition (any touch on screen)
+    // 3. New Touch Down (Assign dedicated role to this finger)
     if (action == AMOTION_EVENT_ACTION_DOWN || action == AMOTION_EVENT_ACTION_POINTER_DOWN) {
         float px = AMotionEvent_getX(event, pointerIndex);
         float py = AMotionEvent_getY(event, pointerIndex);
         int32_t pid = AMotionEvent_getPointerId(event, pointerIndex);
-        if (mTouchPointerId < 0 && pid != mStickPointerId) {
-            mTouchPointerId = pid;
-            mTouchStartTime = currentTimeMs();
-            mTouchStartX = px;
-            mTouchStartY = py;
-            if (vpW > 0 && vpH > 0) {
-                mPointerX = ((px - vpX) / (float)vpW) * 2.0f - 1.0f;
-                mPointerY = ((py - vpY) / (float)vpH) * 2.0f - 1.0f;
-                mPointerX = std::max(-1.0f, std::min(1.0f, mPointerX));
-                mPointerY = std::max(-1.0f, std::min(1.0f, mPointerY));
+
+        int slot = -1;
+        for (int i = 0; i < 10; i++) {
+            if (mTouches[i].id == pid) { slot = i; break; }
+            if (slot < 0 && mTouches[i].id < 0) { slot = i; }
+        }
+        if (slot >= 0) {
+            mTouches[slot].id = pid;
+            mTouches[slot].startX = px;
+            mTouches[slot].startY = py;
+            mTouches[slot].startTime = currentTimeMs();
+            mTouches[slot].role = TouchRole::NONE;
+
+            // Stick acquisition: bottom-left thumb zone
+            bool stickEligible = false;
+            if (mSettings.showControls && mStickPointerId < 0) {
+                if (mSettings.dynamicStick) {
+                    stickEligible = (px <= w * 0.38f && py >= h * 0.45f);
+                } else {
+                    float d2 = (px - defaultStickX) * (px - defaultStickX) + (py - defaultStickY) * (py - defaultStickY);
+                    stickEligible = (d2 <= (stickBaseR * 1.5f) * (stickBaseR * 1.5f));
+                }
             }
-        }
-    }
 
-    // 1. Virtual Stick Acquisition:
-    // Only captures fresh touches in the designated bottom-left thumb zone!
-    if (mSettings.showControls && (action == AMOTION_EVENT_ACTION_DOWN || action == AMOTION_EVENT_ACTION_POINTER_DOWN)) {
-        float px = AMotionEvent_getX(event, pointerIndex);
-        float py = AMotionEvent_getY(event, pointerIndex);
-        int32_t pid = AMotionEvent_getPointerId(event, pointerIndex);
+            if (stickEligible) {
+                mTouches[slot].role = TouchRole::STICK;
+                mStickPointerId = pid;
+                if (mSettings.dynamicStick) {
+                    mStickBaseX = px;
+                    mStickBaseY = py;
+                } else {
+                    mStickBaseX = defaultStickX;
+                    mStickBaseY = defaultStickY;
+                }
+                mStickKnobX = px;
+                mStickKnobY = py;
+                mDirty = true;
+            }
+            // Camera D-Pad
+            else if (mSettings.showControls && mSettings.showDpad &&
+                     ((px - dpadX)*(px - dpadX) + (py - dpadY)*(py - dpadY) <= dpadTotalR * dpadTotalR)) {
+                mTouches[slot].role = TouchRole::DPAD;
+                mDirty = true;
+            }
+            // Action Buttons - NEAREST EXCLUSIVE MATCHING
+            else if (mSettings.showControls) {
+                struct BtnCandidate {
+                    TouchRole role;
+                    float distSq;
+                    float maxDistSq;
+                };
+                BtnCandidate candidates[5] = {
+                    {TouchRole::BTN_A, (px - aX)*(px - aX) + (py - aY)*(py - aY), (aR * 1.15f) * (aR * 1.15f)},
+                    {TouchRole::BTN_B, (px - bX)*(px - bX) + (py - bY)*(py - bY), (bR * 1.15f) * (bR * 1.15f)},
+                    {TouchRole::BTN_Z, (px - zX)*(px - zX) + (py - zY)*(py - zY), (zR * 1.15f) * (zR * 1.15f)},
+                    {TouchRole::BTN_SPIN, (px - spinX)*(px - spinX) + (py - spinY)*(py - spinY), (spinR * 1.15f) * (spinR * 1.15f)},
+                    {TouchRole::BTN_PLUS, (px - plusX)*(px - plusX) + (py - plusY)*(py - plusY), (plusR * 1.25f) * (plusR * 1.25f)},
+                };
 
-        bool stickEligible = false;
-        if (mSettings.dynamicStick) {
-            // Strictly bottom-left quadrant: left 36% of screen AND bottom 50% of screen
-            stickEligible = (px <= w * 0.36f && py >= h * 0.50f);
-        } else {
-            // Fixed mode: within 1.6x of stick center
-            float d2 = (px - defaultStickX) * (px - defaultStickX) + (py - defaultStickY) * (py - defaultStickY);
-            stickEligible = (d2 <= (stickBaseR * 1.6f) * (stickBaseR * 1.6f));
-        }
+                int bestIdx = -1;
+                float bestNormDist = 1.0f;
+                for (int b = 0; b < 5; b++) {
+                    float normDist = candidates[b].distSq / candidates[b].maxDistSq;
+                    if (normDist <= 1.0f && normDist < bestNormDist) {
+                        bestNormDist = normDist;
+                        bestIdx = b;
+                    }
+                }
 
-        if (stickEligible && mStickPointerId < 0) {
-            mStickPointerId = pid;
-            if (mSettings.dynamicStick) {
-                mStickBaseX = px;
-                mStickBaseY = py;
+                if (bestIdx >= 0) {
+                    mTouches[slot].role = candidates[bestIdx].role;
+                    mDirty = true;
+                } else {
+                    mTouches[slot].role = TouchRole::STAR_POINTER;
+                }
             } else {
-                mStickBaseX = defaultStickX;
-                mStickBaseY = defaultStickY;
+                mTouches[slot].role = TouchRole::STAR_POINTER;
             }
-            mStickKnobX = px;
-            mStickKnobY = py;
-            mDirty = true;
+
+            if (mTouches[slot].role == TouchRole::STAR_POINTER) {
+                if (mTouchPointerId < 0) {
+                    mTouchPointerId = pid;
+                    mTouchStartTime = currentTimeMs();
+                    mTouchStartX = px;
+                    mTouchStartY = py;
+                }
+                if (vpW > 0 && vpH > 0) {
+                    mPointerX = ((px - vpX) / (float)vpW) * 2.0f - 1.0f;
+                    mPointerY = ((py - vpY) / (float)vpH) * 2.0f - 1.0f;
+                    mPointerX = std::max(-1.0f, std::min(1.0f, mPointerX));
+                    mPointerY = std::max(-1.0f, std::min(1.0f, mPointerY));
+                }
+            }
         }
     }
 
-    // 2. Iterate Active Pointers
+    // 4. Update state from active pointers
     mFingerDownOnA = false;
     mFingerDownOnB = false;
     mFingerDownOnZ = false;
     mFingerDownOnSpin = false;
+    mFingerDownOnPlus = false;
+    mBtnDpadLeft = false;
+    mBtnDpadRight = false;
+    mBtnDpadUp = false;
+    mBtnDpadDown = false;
     bool stickFound = false;
+
     for (size_t i = 0; i < pointerCount; i++) {
-        // Skip pointer that is releasing right now
         if (action == AMOTION_EVENT_ACTION_POINTER_UP && (int32_t)i == pointerIndex) {
             continue;
         }
@@ -1064,7 +1149,15 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
         float px = AMotionEvent_getX(event, i);
         float py = AMotionEvent_getY(event, i);
 
-        if (pid == mStickPointerId) {
+        TouchRole role = TouchRole::NONE;
+        for (int s = 0; s < 10; s++) {
+            if (mTouches[s].id == pid) {
+                role = mTouches[s].role;
+                break;
+            }
+        }
+
+        if (role == TouchRole::STICK) {
             stickFound = true;
             float dx = px - mStickBaseX;
             float dy = py - mStickBaseY;
@@ -1090,79 +1183,61 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
             }
             pad.stickX = std::max(-1.0f, std::min(1.0f, pad.stickX));
             pad.stickY = std::max(-1.0f, std::min(1.0f, pad.stickY));
-        } else {
-            // Button hit testing
-            auto inRadius = [](float tx, float ty, float cx, float cy, float r) {
-                float d2 = (tx - cx) * (tx - cx) + (ty - cy) * (ty - cy);
-                return d2 <= (r * 1.30f) * (r * 1.30f);
-            };
-
-            bool hitButton = false;
-            if (mSettings.showControls) {
-                if (inRadius(px, py, aX, aY, aR)) {
-                    touchButtons |= 0x0800; // WPAD_BUTTON_A
-                    mBtnAPressed = true;
-                    mFingerDownOnA = true;
-                    hitButton = true;
+        }
+        else if (role == TouchRole::DPAD) {
+            float dDpadX = px - dpadX;
+            float dDpadY = py - dpadY;
+            float distDpad = sqrtf(dDpadX * dDpadX + dDpadY * dDpadY);
+            float deadzone = 8.0f * scale;
+            if (distDpad > deadzone && distDpad <= dpadTotalR * 1.35f) {
+                if (dDpadX < -deadzone && fabsf(dDpadX) > fabsf(dDpadY) * 0.40f) {
+                    touchButtons |= 0x0001; // WPAD_BUTTON_LEFT
+                    mBtnDpadLeft = true;
+                } else if (dDpadX > deadzone && fabsf(dDpadX) > fabsf(dDpadY) * 0.40f) {
+                    touchButtons |= 0x0002; // WPAD_BUTTON_RIGHT
+                    mBtnDpadRight = true;
                 }
-                if (inRadius(px, py, bX, bY, bR)) {
-                    touchButtons |= 0x0400; // WPAD_BUTTON_B
-                    mBtnBPressed = true;
-                    mFingerDownOnB = true;
-                    hitButton = true;
-                }
-                if (inRadius(px, py, spinX, spinY, spinR)) {
-                    spinFrames = 6;
-                    mBtnSpinPressed = true;
-                    mFingerDownOnSpin = true;
-                    hitButton = true;
-                }
-                if (inRadius(px, py, zX, zY, zR)) {
-                    touchButtons |= 0x2000; // WPAD_BUTTON_Z
-                    mBtnZPressed = true;
-                    mFingerDownOnZ = true;
-                    hitButton = true;
-                }
-                if (inRadius(px, py, plusX, plusY, plusR)) {
-                    touchButtons |= 0x0010; // WPAD_BUTTON_PLUS
-                    mBtnPlusPressed = true;
-                    hitButton = true;
-                }
-                if (mSettings.showDpad) {
-                    float dDpadX = px - dpadX;
-                    float dDpadY = py - dpadY;
-                    float distDpad = sqrtf(dDpadX * dDpadX + dDpadY * dDpadY);
-                    if (distDpad <= dpadTotalR) {
-                        hitButton = true;
-                        float deadzone = 8.0f * scale;
-                        if (distDpad > deadzone) {
-                            if (dDpadX < -deadzone && fabsf(dDpadX) > fabsf(dDpadY) * 0.40f) {
-                                touchButtons |= 0x0001; // WPAD_BUTTON_LEFT (rotate cam left)
-                                mBtnDpadLeft = true;
-                            } else if (dDpadX > deadzone && fabsf(dDpadX) > fabsf(dDpadY) * 0.40f) {
-                                touchButtons |= 0x0002; // WPAD_BUTTON_RIGHT (rotate cam right)
-                                mBtnDpadRight = true;
-                            }
-                            if (dDpadY < -deadzone && fabsf(dDpadY) > fabsf(dDpadX) * 0.40f) {
-                                touchButtons |= 0x0008; // WPAD_BUTTON_UP (first-person view / zoom)
-                                mBtnDpadUp = true;
-                            } else if (dDpadY > deadzone && fabsf(dDpadY) > fabsf(dDpadX) * 0.40f) {
-                                touchButtons |= 0x0004; // WPAD_BUTTON_DOWN (recenter camera)
-                                mBtnDpadDown = true;
-                            }
-                        }
-                    }
+                if (dDpadY < -deadzone && fabsf(dDpadY) > fabsf(dDpadX) * 0.40f) {
+                    touchButtons |= 0x0008; // WPAD_BUTTON_UP
+                    mBtnDpadUp = true;
+                } else if (dDpadY > deadzone && fabsf(dDpadY) > fabsf(dDpadX) * 0.40f) {
+                    touchButtons |= 0x0004; // WPAD_BUTTON_DOWN
+                    mBtnDpadDown = true;
                 }
             }
-
-            // Direct screen touch: moves the in-game Star Pointer!
-            if (!hitButton && vpW > 0 && vpH > 0) {
+        }
+        else if (role == TouchRole::BTN_A) {
+            touchButtons |= 0x0800; // WPAD_BUTTON_A
+            mBtnAPressed = true;
+            mFingerDownOnA = true;
+        }
+        else if (role == TouchRole::BTN_B) {
+            touchButtons |= 0x0400; // WPAD_BUTTON_B
+            mBtnBPressed = true;
+            mFingerDownOnB = true;
+        }
+        else if (role == TouchRole::BTN_Z) {
+            touchButtons |= 0x2000; // WPAD_BUTTON_Z
+            mBtnZPressed = true;
+            mFingerDownOnZ = true;
+        }
+        else if (role == TouchRole::BTN_SPIN) {
+            spinFrames = 6;
+            mBtnSpinPressed = true;
+            mFingerDownOnSpin = true;
+        }
+        else if (role == TouchRole::BTN_PLUS) {
+            touchButtons |= 0x0010; // WPAD_BUTTON_PLUS
+            mBtnPlusPressed = true;
+            mFingerDownOnPlus = true;
+        }
+        else {
+            // Star Pointer
+            if (vpW > 0 && vpH > 0) {
                 mPointerX = ((px - vpX) / (float)vpW) * 2.0f - 1.0f;
                 mPointerY = ((py - vpY) / (float)vpH) * 2.0f - 1.0f;
                 mPointerX = std::max(-1.0f, std::min(1.0f, mPointerX));
                 mPointerY = std::max(-1.0f, std::min(1.0f, mPointerY));
-
-                // Smooth pointer tracking without accidental spin flick trigger
             }
         }
     }
@@ -1181,11 +1256,8 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
         if (isTitle) {
             touchButtons |= 0x0C00; // WPAD_BUTTON_A | WPAD_BUTTON_B
             mBtnBPressed = true;
-        } else {
-            touchButtons |= 0x0800; // WPAD_BUTTON_A
-            mBtnBPressed = false;
+            mBtnAPressed = true;
         }
-        mBtnAPressed = true;
     }
 
     pad.buttons = touchButtons;
@@ -1455,8 +1527,8 @@ void UIOverlay::render(int screenW, int screenH) {
         // ---------------------------------------------------------
         // 2. Action Buttons - Frosted Glass with Signature Micro-Accents
         // ---------------------------------------------------------
-        float btnBaseX = w - 160.0f * scale + mSettings.buttonOffsetX;
-        float btnBaseY = h - 160.0f * scale + mSettings.buttonOffsetY;
+        float btnBaseX = w - 150.0f * scale + mSettings.buttonOffsetX;
+        float btnBaseY = h - 150.0f * scale + mSettings.buttonOffsetY;
 
         auto drawModernButton = [&](float cx, float cy, float r, const char* label, uint32_t accentHex, bool pressed, int specialGlyph = 0) {
             float pr = pressed ? (r * 0.93f) : r;
@@ -1500,10 +1572,10 @@ void UIOverlay::render(int screenW, int screenH) {
         drawModernButton(btnBaseX - 110.0f * scale, btnBaseY - 20.0f * scale, 45.0f * scale, "B", 0xFBBF24, mBtnBPressed);
 
         // Button SPIN - Luminous Emerald Mint (#34D399) with Cyclone Glyph
-        drawModernButton(btnBaseX + 25.0f * scale, btnBaseY - 125.0f * scale, 48.0f * scale, "SPIN", 0x34D399, mBtnSpinPressed, 1);
+        drawModernButton(btnBaseX + 30.0f * scale, btnBaseY - 125.0f * scale, 48.0f * scale, "SPIN", 0x34D399, mBtnSpinPressed, 1);
 
         // Button Z (Crouch) - Luminous Lavender Violet (#A78BFA)
-        drawModernButton(btnBaseX - 75.0f * scale, btnBaseY - 110.0f * scale, 44.0f * scale, "Z", 0xA78BFA, mBtnZPressed);
+        drawModernButton(btnBaseX - 85.0f * scale, btnBaseY - 115.0f * scale, 44.0f * scale, "Z", 0xA78BFA, mBtnZPressed);
 
         // Button + (Pause) - Minimalist Pearl Slate (#E2E8F0) with Vector Cross
         drawModernButton(w - 65.0f * scale, 65.0f * scale, 34.0f * scale, "+", 0x94A3B8, mBtnPlusPressed, 2);
@@ -1676,7 +1748,7 @@ void UIOverlay::render(int screenW, int screenH) {
         float contentW = drawerW - padX * 2.0f;
         float contentTop = mPlusEdition ? (112.0f * uiScale) : (68.0f * uiScale);
         float contentBottom = h - 56.0f * uiScale;
-        float totalContentH = (mSettingsTab == 0 || !mPlusEdition) ? (685.0f * uiScale) : (340.0f * uiScale);
+        float totalContentH = (mSettingsTab == 0 || !mPlusEdition) ? (800.0f * uiScale) : (340.0f * uiScale);
         float maxScroll = std::max(0.0f, totalContentH - (contentBottom - contentTop));
 
         // Smooth scroll damping
@@ -1793,21 +1865,38 @@ void UIOverlay::render(int screenW, int screenH) {
                 drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, hudOpts, 3, hudIdx);
             });
 
-            // Row 11: Realtime Hardware & Device Info Card
-            renderRow(614.0f * uiScale, 64.0f * uiScale, [&](float y) {
+            // Row 11: Target Frame Rate Segmented Button
+            renderRow(610.0f * uiScale, 54.0f * uiScale, [&](float y) {
+                drawText("Target Frame Rate", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+                const char* fpsOpts[3] = {"60 FPS", "90 FPS", "120 FPS"};
+                int fpsIdx = (mSettings.targetFps >= 120) ? 2 : (mSettings.targetFps >= 90) ? 1 : 0;
+                drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, fpsOpts, 3, fpsIdx);
+            });
+
+            // Row 12: Graphics Backend Segmented Button
+            renderRow(668.0f * uiScale, 54.0f * uiScale, [&](float y) {
+                drawText("Graphics Backend", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+                const char* backendOpts[2] = {"OpenGL ES 3.2", "Vulkan 1.1 (Exp)"};
+                int bkIdx = (mSettings.graphicsBackend == 1) ? 1 : 0;
+                drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, backendOpts, 2, bkIdx);
+            });
+
+            // Row 13: Realtime Hardware & Device Info Card
+            renderRow(726.0f * uiScale, 64.0f * uiScale, [&](float y) {
                 float cardX0 = drawerX + padX;
                 float cardX1 = drawerX + drawerW - padX;
                 float cardH = 60.0f * uiScale;
                 drawRoundRect(cardX0, y, cardX1, y + cardH, 12.0f * uiScale, rgba(0.10f, 0.12f, 0.16f, 0.90f));
                 drawRoundRect(cardX0 + 1.0f, y + 1.0f, cardX1 - 1.0f, y + cardH - 1.0f, 11.0f * uiScale, rgba(0.20f, 0.25f, 0.34f, 0.50f));
 
-                char gpuLine[128], resLine[128];
+                char gpuLine[128], resLine[128], apiLine[128];
                 snprintf(gpuLine, sizeof(gpuLine), "GPU: %s", mGpuRendererName.empty() ? "OpenGL ES 3.2" : mGpuRendererName.c_str());
                 snprintf(resLine, sizeof(resLine), "Display: %dx%d (Hor+ Ultrawide)", (int)w, (int)h);
+                snprintf(apiLine, sizeof(apiLine), "Active Engine: %s • Native ARM64", (mSettings.graphicsBackend == 1) ? "Vulkan 1.1" : "OpenGL ES 3.2");
 
                 drawText(gpuLine, cardX0 + 12.0f * uiScale, y + 18.0f * uiScale, 0.28f * uiScale, rgba(0.40f, 0.75f, 1.0f, 0.95f), 0);
                 drawText(resLine, cardX0 + 12.0f * uiScale, y + 34.0f * uiScale, 0.26f * uiScale, rgba(0.80f, 0.84f, 0.90f, 0.85f), 0);
-                drawText("API: OpenGL ES 3.2 • GLES Engine", cardX0 + 12.0f * uiScale, y + 49.0f * uiScale, 0.24f * uiScale, rgba(0.55f, 0.60f, 0.68f, 0.80f), 0);
+                drawText(apiLine, cardX0 + 12.0f * uiScale, y + 49.0f * uiScale, 0.24f * uiScale, rgba(0.55f, 0.60f, 0.68f, 0.80f), 0);
             });
         } else {
             // Advanced Tab Settings Items (Gameplay Mods)
