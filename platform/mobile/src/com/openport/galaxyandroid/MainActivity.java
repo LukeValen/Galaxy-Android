@@ -48,12 +48,25 @@ public class MainActivity extends Activity {
 
     public static boolean isGameDataReady() {
         File dataDir = new File("/sdcard/GalaxyData");
-        if (!dataDir.exists()) return false;
+        if (!dataDir.exists()) {
+            dataDir = new File(Environment.getExternalStorageDirectory(), "GalaxyData");
+            if (!dataDir.exists()) return false;
+        }
         File sentinel = new File(dataDir, ".installed_ok");
         File fst = new File(dataDir, "sys/fst.bin");
         File files = new File(dataDir, "files");
         File coin = new File(dataDir, "files/ObjectData/Coin.arc");
-        return sentinel.exists() && fst.exists() && fst.isFile() && files.exists() && files.isDirectory() && coin.exists();
+        if (!sentinel.exists() || !fst.exists() || !fst.isFile() || !files.exists() || !files.isDirectory() || !coin.exists()) {
+            return false;
+        }
+        // Verify Coin.arc is converted to little-endian ARM64 ("CRAR")
+        try (java.io.FileInputStream fis = new java.io.FileInputStream(coin)) {
+            byte[] header = new byte[4];
+            if (fis.read(header) == 4) {
+                return header[0] == 'C' && header[1] == 'R' && header[2] == 'A' && header[3] == 'R';
+            }
+        } catch (Exception ignored) {}
+        return false;
     }
 
     @Override

@@ -19,6 +19,11 @@ public class GameActivity extends NativeActivity {
         super.onCreate(savedInstanceState);
         sInstance = this;
         applyFullscreen();
+
+        if (!MainActivity.isGameDataReady()) {
+            returnToLauncher();
+            return;
+        }
     }
 
     @Override

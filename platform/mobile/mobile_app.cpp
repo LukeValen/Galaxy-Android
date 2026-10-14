@@ -729,12 +729,18 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
                 port_boot(a.dataRoot.c_str(), a.saveRoot.c_str());
             } else {
                 static int64_t lastLog = 0;
+                static int missingCount = 0;
                 int64_t now = port_host_time_ns();
-                if (now - lastLog > 3000000000ll) {  // Every 3 seconds
+                if (now - lastLog > 2000000000ll) {  // Every 2 seconds
                     lastLog = now;
-                    LOGI("Waiting for game files in /sdcard/GalaxyData or %s/game", ext.c_str());
+                    missingCount++;
+                    LOGI("Waiting for game files in /sdcard/GalaxyData or %s/game (attempt %d)", ext.c_str(), missingCount);
                     // Re-scan in case player pushed files
                     a.dataRoot = findGameData(ext);
+                    if (a.dataRoot.empty() && missingCount >= 2) {
+                        LOGE("Game data missing or incomplete, redirecting to launcher activity");
+                        port_android_exit_to_launcher();
+                    }
                 }
             }
         }
