@@ -61,6 +61,8 @@ struct MobileApp {
     // Input state
     PortPadState pad{}; // Touch controls only
     PortPadState gamepad{}; // Physical controls survive touch updates
+    uint32_t gamepadKeyButtons = 0;
+    uint32_t gamepadAxisButtons = 0;
     bool touchscreenDown = false;
     bool touchActive = false;
     float touchX = 0.0f, touchY = 0.0f;
@@ -77,7 +79,7 @@ MobileApp gMobile;
 
 void publishInput(MobileApp& a) {
     PortPadState combined = a.pad;
-    combined.buttons |= a.gamepad.buttons;
+    combined.buttons |= a.gamepadKeyButtons | a.gamepadAxisButtons;
     combined.connected = a.pad.connected || a.gamepad.connected;
     if (a.stickPointerId < 0 && combined.stickX == 0.0f && combined.stickY == 0.0f) {
         combined.stickX = a.gamepad.stickX;
@@ -424,21 +426,21 @@ int32_t onInput(android_app* app, AInputEvent* event) {
             // D-Pad Hat axes (Standard on Xbox, PlayStation, 8BitDo, and HID pads)
             float hatX = AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_HAT_X, 0);
             float hatY = AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_HAT_Y, 0);
-            if (hatX < -0.5f) { a->gamepad.buttons |= 0x0001; a->gamepad.buttons &= ~0x0002; }
-            else if (hatX > 0.5f) { a->gamepad.buttons |= 0x0002; a->gamepad.buttons &= ~0x0001; }
-            else { a->gamepad.buttons &= ~0x0003; }
+            if (hatX < -0.5f) { a->gamepadAxisButtons |= 0x0001; a->gamepadAxisButtons &= ~0x0002; }
+            else if (hatX > 0.5f) { a->gamepadAxisButtons |= 0x0002; a->gamepadAxisButtons &= ~0x0001; }
+            else { a->gamepadAxisButtons &= ~0x0003; }
 
-            if (hatY < -0.5f) { a->gamepad.buttons |= 0x0008; a->gamepad.buttons &= ~0x0004; }
-            else if (hatY > 0.5f) { a->gamepad.buttons |= 0x0004; a->gamepad.buttons &= ~0x0008; }
-            else { a->gamepad.buttons &= ~0x000C; }
+            if (hatY < -0.5f) { a->gamepadAxisButtons |= 0x0008; a->gamepadAxisButtons &= ~0x0004; }
+            else if (hatY > 0.5f) { a->gamepadAxisButtons |= 0x0004; a->gamepadAxisButtons &= ~0x0008; }
+            else { a->gamepadAxisButtons &= ~0x000C; }
 
             // Analog Triggers (L2 / R2)
             float lTrig = std::max(AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_LTRIGGER, 0),
                                    AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_BRAKE, 0));
             float rTrig = std::max(AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_RTRIGGER, 0),
                                    AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_GAS, 0));
-            if (lTrig > 0.4f) a->gamepad.buttons |= 0x2000; // Z button (Crouch / Ground Pound)
-            else a->gamepad.buttons &= ~0x2000;
+            if (lTrig > 0.4f) a->gamepadAxisButtons |= 0x2000; // Z button (Crouch / Ground Pound)
+            else a->gamepadAxisButtons &= ~0x2000;
 
             if (rTrig > 0.4f) a->spinFrames = 6; // Spin shake
 
@@ -496,13 +498,13 @@ int32_t onInput(android_app* app, AInputEvent* event) {
         case AKEYCODE_BUTTON_A:
         case AKEYCODE_DPAD_CENTER:
             a->gamepad.connected = 1;
-            if (down) a->gamepad.buttons |= 0x0800;  // A
-            else a->gamepad.buttons &= ~0x0800;
+            if (down) a->gamepadKeyButtons |= 0x0800;  // A
+            else a->gamepadKeyButtons &= ~0x0800;
             break;
         case AKEYCODE_BUTTON_B:
             a->gamepad.connected = 1;
-            if (down) a->gamepad.buttons |= 0x0400;  // B
-            else a->gamepad.buttons &= ~0x0400;
+            if (down) a->gamepadKeyButtons |= 0x0400;  // B
+            else a->gamepadKeyButtons &= ~0x0400;
             break;
         case AKEYCODE_BUTTON_X:
             a->gamepad.connected = 1;
@@ -510,15 +512,15 @@ int32_t onInput(android_app* app, AInputEvent* event) {
             break;
         case AKEYCODE_BUTTON_Y:
             a->gamepad.connected = 1;
-            if (down) a->gamepad.buttons |= 0x1000;  // C
-            else a->gamepad.buttons &= ~0x1000;
+            if (down) a->gamepadKeyButtons |= 0x1000;  // C
+            else a->gamepadKeyButtons &= ~0x1000;
             break;
         case AKEYCODE_BUTTON_L1:
         case AKEYCODE_BUTTON_L2:
         case AKEYCODE_BUTTON_THUMBL:
             a->gamepad.connected = 1;
-            if (down) a->gamepad.buttons |= 0x2000;  // Z (crouch / ground pound)
-            else a->gamepad.buttons &= ~0x2000;
+            if (down) a->gamepadKeyButtons |= 0x2000;  // Z (crouch / ground pound)
+            else a->gamepadKeyButtons &= ~0x2000;
             break;
         case AKEYCODE_BUTTON_R1:
         case AKEYCODE_BUTTON_R2:
@@ -531,28 +533,28 @@ int32_t onInput(android_app* app, AInputEvent* event) {
         case AKEYCODE_BUTTON_MODE:
         case AKEYCODE_MENU:
             a->gamepad.connected = 1;
-            if (down) a->gamepad.buttons |= 0x0010;  // Plus / Pause
-            else a->gamepad.buttons &= ~0x0010;
+            if (down) a->gamepadKeyButtons |= 0x0010;  // Plus / Pause
+            else a->gamepadKeyButtons &= ~0x0010;
             break;
         case AKEYCODE_DPAD_UP:
             a->gamepad.connected = 1;
-            if (down) a->gamepad.buttons |= 0x0008;
-            else a->gamepad.buttons &= ~0x0008;
+            if (down) a->gamepadKeyButtons |= 0x0008;
+            else a->gamepadKeyButtons &= ~0x0008;
             break;
         case AKEYCODE_DPAD_DOWN:
             a->gamepad.connected = 1;
-            if (down) a->gamepad.buttons |= 0x0004;
-            else a->gamepad.buttons &= ~0x0004;
+            if (down) a->gamepadKeyButtons |= 0x0004;
+            else a->gamepadKeyButtons &= ~0x0004;
             break;
         case AKEYCODE_DPAD_LEFT:
             a->gamepad.connected = 1;
-            if (down) a->gamepad.buttons |= 0x0001;
-            else a->gamepad.buttons &= ~0x0001;
+            if (down) a->gamepadKeyButtons |= 0x0001;
+            else a->gamepadKeyButtons &= ~0x0001;
             break;
         case AKEYCODE_DPAD_RIGHT:
             a->gamepad.connected = 1;
-            if (down) a->gamepad.buttons |= 0x0002;
-            else a->gamepad.buttons &= ~0x0002;
+            if (down) a->gamepadKeyButtons |= 0x0002;
+            else a->gamepadKeyButtons &= ~0x0002;
             break;
         case AKEYCODE_BACK:
             if (mobile_ui::get().isSettingsOpen()) {
@@ -602,6 +604,8 @@ void onAppCmd(android_app* app, int32_t cmd) {
     case APP_CMD_PAUSE:
         LOGI("APP_CMD_PAUSE");
         a->gamepad = {};
+        a->gamepadKeyButtons = 0;
+        a->gamepadAxisButtons = 0;
         a->touchscreenDown = false;
         a->spinFrames = 0;
         publishInput(*a);
