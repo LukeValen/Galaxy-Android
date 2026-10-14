@@ -6,11 +6,41 @@ import android.os.Bundle;
 import android.view.View;
 import android.view.WindowManager;
 
+import android.content.Context;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
+
 public class GameActivity extends NativeActivity {
+    private static GameActivity sInstance;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        sInstance = this;
         applyFullscreen();
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (sInstance == this) sInstance = null;
+        super.onDestroy();
+    }
+
+    public static void triggerHaptic(int ms) {
+        if (sInstance != null) {
+            sInstance.runOnUiThread(() -> {
+                try {
+                    Vibrator v = (Vibrator) sInstance.getSystemService(Context.VIBRATOR_SERVICE);
+                    if (v != null && v.hasVibrator()) {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            v.vibrate(VibrationEffect.createOneShot(ms, VibrationEffect.DEFAULT_AMPLITUDE));
+                        } else {
+                            v.vibrate(ms);
+                        }
+                    }
+                } catch (Exception ignored) {}
+            });
+        }
     }
 
     @Override

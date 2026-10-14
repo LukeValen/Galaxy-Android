@@ -334,6 +334,7 @@ void UIOverlay::closeSettings() {
 
 void UIOverlay::triggerSaveAnywhere() {
     port_trigger_quick_save();
+    port_android_vibrate(50);
     mSaveToastTimer = 2.5f;
     mDirty = true;
     LOGI("Save anywhere requested and triggered from Mobile UI");
@@ -608,6 +609,12 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                 mSettingsOpen = true;
                 mBtnCfgPressed = true;
                 mDirty = true;
+                return true;
+            }
+            float qsX = tabW + 16.0f * uiScale;
+            float qsW = 54.0f * uiScale;
+            if (px >= qsX - 4.0f * uiScale && px <= qsX + qsW + 6.0f * uiScale && py >= tabY - 6.0f * uiScale && py <= tabY + tabH + 6.0f * uiScale) {
+                triggerSaveAnywhere();
                 return true;
             }
         }
@@ -1227,26 +1234,31 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
         }
         else if (role == TouchRole::BTN_A) {
             touchButtons |= 0x0800; // WPAD_BUTTON_A
+            if (!mBtnAPressed) port_android_vibrate(22);
             mBtnAPressed = true;
             mFingerDownOnA = true;
         }
         else if (role == TouchRole::BTN_B) {
             touchButtons |= 0x0400; // WPAD_BUTTON_B
+            if (!mBtnBPressed) port_android_vibrate(18);
             mBtnBPressed = true;
             mFingerDownOnB = true;
         }
         else if (role == TouchRole::BTN_Z) {
             touchButtons |= 0x2000; // WPAD_BUTTON_Z
+            if (!mBtnZPressed) port_android_vibrate(20);
             mBtnZPressed = true;
             mFingerDownOnZ = true;
         }
         else if (role == TouchRole::BTN_SPIN) {
             spinFrames = 6;
+            if (!mBtnSpinPressed) port_android_vibrate(35);
             mBtnSpinPressed = true;
             mFingerDownOnSpin = true;
         }
         else if (role == TouchRole::BTN_PLUS) {
             touchButtons |= 0x0010; // WPAD_BUTTON_PLUS
+            if (!mBtnPlusPressed) port_android_vibrate(25);
             mBtnPlusPressed = true;
             mFingerDownOnPlus = true;
         }
@@ -1705,6 +1717,13 @@ void UIOverlay::render(int screenW, int screenH) {
 
         // Rotating Material 3 Cogwheel icon in Google Accent Blue
         drawCogwheel(tabW * 0.50f, tabY + tabH * 0.5f, 15.0f * uiScale, rgba(0.659f, 0.780f, 0.980f, 1.0f), cogRot);
+
+        // Direct Quick Save Pill Button (💾)
+        float qsX = tabW + 16.0f * uiScale;
+        float qsW = 58.0f * uiScale;
+        drawRoundRect(qsX, tabY + 4.0f * uiScale, qsX + qsW, tabY + tabH - 4.0f * uiScale, 16.0f * uiScale, rgba(0.12f, 0.14f, 0.18f, 0.88f));
+        drawRoundRect(qsX, tabY + 4.0f * uiScale, qsX + qsW, tabY + tabH - 4.0f * uiScale, 16.0f * uiScale, rgba(0.25f, 0.45f, 0.78f, 0.65f));
+        drawText("SAVE", qsX + qsW * 0.5f, tabY + tabH * 0.5f + 4.0f * uiScale, 0.28f * uiScale, rgba(0.92f, 0.96f, 1.0f, 0.95f), 1);
     }
 
     // -------------------------------------------------------------

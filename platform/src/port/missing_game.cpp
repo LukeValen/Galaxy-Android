@@ -59,4 +59,5 @@ __attribute__((weak)) void port_trigger_quick_save(void) {
 __attribute__((weak)) int port_check_quick_save_request(void) {
     return __atomic_exchange_n(&sQuickSaveRequested, 0, __ATOMIC_ACQ_REL);
 }
+__attribute__((weak)) void port_android_vibrate(int ms) { (void)ms; }
 }
