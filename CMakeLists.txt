@@ -145,7 +145,7 @@ if(ANDROID)
 
   if(TARGET_MOBILE)
     target_include_directories(game PRIVATE ${GLUE_DIR})
-    target_link_libraries(game PRIVATE EGL GLESv3 aaudio)
+    target_link_libraries(game PRIVATE EGL GLESv3 aaudio vulkan)
   else()
     # The Khronos OpenXR loader (tools/fetch_openxr.sh puts it there).
     set(OPENXR_DIR ${CMAKE_SOURCE_DIR}/third_party/openxr/prefab/modules)

@@ -969,3 +969,10 @@ namespace MR {
     }
 
 };  // namespace MR
+
+extern "C" int port_is_title_screen(void) {
+    StarPointerOnOffController* ctrl = ::getStarPointerOnOffController();
+    if (!ctrl) return 1;
+    s32 mode = ctrl->mMode;
+    return (mode == StarPointerMode_Title || mode == StarPointerMode_Logo);
+}

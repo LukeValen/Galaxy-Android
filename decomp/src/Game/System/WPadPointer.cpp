@@ -12,7 +12,11 @@ void WPadPointer_FORCE_MATCH_SDATA2() {
 
 namespace {
     static const f32 sMoveJudgeSpeed = 0.0001f;
+#if defined(TARGET_PC) || defined(TARGET_MOBILE)
+    static const s32 sIsValidInScreenTime = 0;
+#else
     static const s32 sIsValidInScreenTime = 5;
+#endif
     static const s32 sIsInValidOutScreenTime = 10;
     static const s32 sLostSensorTime = 20;
 };  // namespace

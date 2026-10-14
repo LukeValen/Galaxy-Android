@@ -25,12 +25,10 @@ struct Out {
 };
 
 const char* kUniformBlocksVs = R"(
-precision highp samplerBuffer;
-precision highp usamplerBuffer;
-layout(binding = 8) uniform highp samplerBuffer s_rows;
-layout(binding = 9) uniform highp usamplerBuffer s_recs;
-layout(binding = 10) uniform highp samplerBuffer s_st;
-layout(binding = 11) uniform highp usamplerBuffer s_vtxRec;
+layout(binding = 8) uniform highp sampler2D s_rows;
+layout(binding = 9) uniform highp usampler2D s_recs;
+layout(binding = 10) uniform highp sampler2D s_st;
+layout(binding = 11) uniform highp usampler2D s_vtxRec;
 layout(std140, binding = 2) uniform EyeBlock {
     vec4 vrView[4];
     vec4 vrProj[4];
@@ -42,10 +40,10 @@ layout(std140, binding = 2) uniform EyeBlock {
     vec4 vrStereo2;
 };
 
-#define fetch_rows(r) texelFetch(s_rows, int(r))
-#define fetch_recs(idx) texelFetch(s_recs, int(idx)).r
-#define fetch_st(idx) texelFetch(s_st, int(idx))
-#define fetch_vtxRec(idx) texelFetch(s_vtxRec, int(idx)).r
+#define fetch_rows(r) texelFetch(s_rows, ivec2(int(r) & 2047, int(r) >> 11), 0)
+#define fetch_recs(idx) texelFetch(s_recs, ivec2(int(idx) & 2047, int(idx) >> 11), 0).r
+#define fetch_st(idx) texelFetch(s_st, ivec2(int(idx) & 2047, int(idx) >> 11), 0)
+#define fetch_vtxRec(idx) texelFetch(s_vtxRec, ivec2(int(idx) & 2047, int(idx) >> 11), 0).r
 
 #define slotRow(rb, firstSlot, idx) (fetch_recs((rb) + (firstSlot) + uint((idx) / 3)) + uint((idx) % 3))
 #define mulRows(r, v) vec3(dot(fetch_rows(r), v), dot(fetch_rows((r) + 1u), v), dot(fetch_rows((r) + 2u), v))
@@ -53,7 +51,7 @@ layout(std140, binding = 2) uniform EyeBlock {
 )";
 
 const char* kUniformBlocksFs = R"(
-layout(std430, binding = 2) buffer StateBuf { vec4 st[]; };
+layout(binding = 10) uniform highp sampler2D s_st;
 layout(std140, binding = 2) uniform EyeBlock {
     vec4 vrView[4];
     vec4 vrProj[4];
@@ -64,6 +62,8 @@ layout(std140, binding = 2) uniform EyeBlock {
     vec4 vrStereo;
     vec4 vrStereo2;
 };
+
+#define fetch_st(idx) texelFetch(s_st, ivec2(int(idx) & 2047, int(idx) >> 11), 0)
 )";
 
 }  // namespace
@@ -207,6 +207,11 @@ std::string genVertexShader(const ShaderUid& u) {
         o.w("    }\n");
     }
     o.w("    clipPos = vec4(c.x, c.y, depth * 2.0 * 1.0 - c.w, c.w);\n");
+    o.w("    if ((fetch_recs(rb + %uu) & 2u) != 0u) {\n", (unsigned)kRecFlags);
+    o.w("      clipPos.z = clipPos.w * 0.99999;\n");
+    o.w("    } else {\n");
+    o.w("      clipPos.z = min(clipPos.z, clipPos.w * 0.99999);\n");
+    o.w("    }\n");
     if (u.cutaway) o.w("    v_eye = vec3(0.0, 0.0, 1.0e6);  // never cut\n");
     o.w("  }\n");
     o.w("  gl_Position = clipPos;\n");
@@ -250,13 +255,15 @@ std::string genVertexShader(const ShaderUid& u) {
                 if (!atten) {
                     o.w("      vec3 ldir = normalize(lpos - pos); float att = 1.0;\n");
                 } else if (spot) {
-                    o.w("      vec3 ldir = lpos - pos; float d2 = dot(ldir, ldir); float d = sqrt(d2); ldir = ldir / d;\n");
+                    o.w("      vec3 ldir = lpos - pos; float d2 = dot(ldir, ldir); float d = sqrt(max(d2, 1e-4)); ldir = ldir / d;\n");
                     o.w("      float a = max(0.0, dot(ldir, ldirv));\n");
-                    o.w("      float att = max(0.0, dot(lcos, vec3(1.0, a, a * a))) / dot(ldist, vec3(1.0, d, d2));\n");
+                    o.w("      float distDenom = dot(ldist, vec3(1.0, d, d2));\n");
+                    o.w("      float att = (distDenom > 1e-5) ? max(0.0, dot(lcos, vec3(1.0, a, a * a))) / distDenom : 1.0;\n");
                 } else {
                     o.w("      vec3 ldir = normalize(lpos);\n");
                     o.w("      float a = (dot(nrm, ldir) >= 0.0) ? max(0.0, dot(nrm, ldirv)) : 0.0;\n");
-                    o.w("      float att = max(0.0, dot(lcos, vec3(1.0, a, a * a))) / dot(ldist, vec3(1.0, a, a * a));\n");
+                    o.w("      float distDenom = dot(ldist, vec3(1.0, a, a * a));\n");
+                    o.w("      float att = (distDenom > 1e-5) ? max(0.0, dot(lcos, vec3(1.0, a, a * a))) / distDenom : 1.0;\n");
                 }
                 const char* dif = diffuse == 0 ? "1.0" : diffuse == 1 ? "dot(ldir, nrm)" : "max(0.0, dot(ldir, nrm))";
                 o.w("      lit += att * %s * lcol.%s;\n", dif, sw);
@@ -342,9 +349,9 @@ std::string genVertexShader(const ShaderUid& u) {
         }
         if ((u.screenTexGens >> i) & 1) {
             // A capture of the screen sampled where the vertex lands on it.
-            // In VR (and in a stereo pair) the capture holds this eye's view:
-            // use the eye's screen position (texture rows run top-down).
-            o.w("    if (vrDraw || stereoDraw) t = vec3((clipPos.x + clipPos.w) * 0.5, (clipPos.w - clipPos.y) * 0.5, clipPos.w);\n");
+            // Works for VR, stereo, and native flat mobile screens:
+            // maps vertex clip position to top-down normalized screen UV.
+            o.w("    t = vec3((clipPos.x + clipPos.w) * 0.5, (clipPos.w - clipPos.y) * 0.5, clipPos.w);\n");
         }
         o.w("    v_tex%u = t;\n  }\n", i);
     }
@@ -409,6 +416,15 @@ std::string tevRegular(const char* comp, uint32_t bias, uint32_t sub, uint32_t s
 
 std::string swapString(const ShaderUid& u, uint32_t table) {
     uint32_t lo = u.ksel[table * 2], hi = u.ksel[table * 2 + 1];
+    // GX hardware default fallback if swap table bits (low 4 bits of lo & hi) are unprogrammed:
+    if ((lo & 0xFu) == 0 && (hi & 0xFu) == 0) {
+        switch (table & 3) {
+        case 0: return ".rgba";
+        case 1: return ".rrra";
+        case 2: return ".ggga";
+        case 3: return ".bbba";
+        }
+    }
     std::string s = ".";
     s += kComp[lo & 3];
     s += kComp[(lo >> 2) & 3];
@@ -483,12 +499,12 @@ std::string genFragmentShader(const ShaderUid& u) {
     o.w("    if (cut > (kBayer[q.y * 4 + q.x] + 0.5) / 16.0) discard;\n");
     o.w("  }\n");
     }
-    o.w("  vec4 tevReg[4] = vec4[4](st[v_pix], st[v_pix + 1u], st[v_pix + 2u], st[v_pix + 3u]);\n");
-    o.w("  ivec4 konst[4];\n  for (int i = 0; i < 4; i++) konst[i] = ivec4(round(st[v_pix + 4u + uint(i)] * 255.0));\n");
-    o.w("  vec4 alphaRef = st[v_pix + 8u];\n  vec4 fogColor = st[v_pix + 9u];\n  vec4 fogParams = st[v_pix + 10u];\n");
-    o.w("  vec4 fogRange = st[v_pix + 11u];\n");
-    o.w("  vec4 texSize[8];\n  for (int i = 0; i < 8; i++) texSize[i] = st[v_pix + 12u + uint(i)];\n");
-    o.w("  vec4 indMtx[6];\n  for (int i = 0; i < 6; i++) indMtx[i] = st[v_pix + 20u + uint(i)];\n");
+    o.w("  vec4 tevReg[4] = vec4[4](fetch_st(v_pix), fetch_st(v_pix + 1u), fetch_st(v_pix + 2u), fetch_st(v_pix + 3u));\n");
+    o.w("  ivec4 konst[4];\n  for (int i = 0; i < 4; i++) konst[i] = ivec4(round(fetch_st(v_pix + 4u + uint(i)) * 255.0));\n");
+    o.w("  vec4 alphaRef = fetch_st(v_pix + 8u);\n  vec4 fogColor = fetch_st(v_pix + 9u);\n  vec4 fogParams = fetch_st(v_pix + 10u);\n");
+    o.w("  vec4 fogRange = fetch_st(v_pix + 11u);\n");
+    o.w("  vec4 texSize[8];\n  for (int i = 0; i < 8; i++) texSize[i] = fetch_st(v_pix + 12u + uint(i));\n");
+    o.w("  vec4 indMtx[6];\n  for (int i = 0; i < 6; i++) indMtx[i] = fetch_st(v_pix + 20u + uint(i));\n");
     o.w("  ivec4 prev = ivec4(round(tevReg[0] * 255.0));\n  ivec4 c0 = ivec4(round(tevReg[1] * 255.0));\n");
     o.w("  ivec4 c1 = ivec4(round(tevReg[2] * 255.0));\n  ivec4 c2 = ivec4(round(tevReg[3] * 255.0));\n");
     o.w("  ivec4 tex = ivec4(0);\n  ivec4 ras = ivec4(0);\n  ivec3 kc = ivec3(0);\n  int ka = 0;\n");
@@ -657,7 +673,8 @@ std::string genFragmentShader(const ShaderUid& u) {
         if (fogOrtho) {
             o.w("    float ze = fogParams.x * zc / 16777216.0;\n");
         } else {
-            o.w("    float ze = (fogParams.x * 16777216.0) / (fogParams.z - floor(zc / exp2(fogParams.w)));\n");
+            o.w("    float denom = fogParams.z - floor(zc / exp2(clamp(fogParams.w, 0.0, 31.0)));\n");
+            o.w("    float ze = (denom > 1.0) ? (fogParams.x * 16777216.0) / denom : 0.0;\n");
         }
         o.w("    float fz = clamp(ze - fogParams.y, 0.0, 1.0);\n");
         switch (fogType) {

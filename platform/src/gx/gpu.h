@@ -54,9 +54,24 @@ struct GpuState {
     XFState xf;
     u32 bp[0x100] = {};
     u32 bpMask = 0xFFFFFF;
-    // BP 0xE0-0xE7 hold either TEV color registers or konst colors (bit 23).
     u32 tevReg[8] = {};    // PREV/REG0-2: lo (R,A), hi (B,G) pairs
     u32 tevKonst[8] = {};  // K0-K3
+
+    GpuState() {
+        // Default GX swap tables (GXInit.c / Nintendo GX specification):
+        // Table 0: R=0, G=1, B=2, A=3 -> lo: (1<<2)|0 = 0x04, hi: (3<<2)|2 = 0x0E (.rgba)
+        bp[0xF6] = 0x000004;
+        bp[0xF7] = 0x00000E;
+        // Table 1: R=0, G=0, B=0, A=3 -> lo: 0x00, hi: (3<<2)|0 = 0x0C (.rrra)
+        bp[0xF8] = 0x000000;
+        bp[0xF9] = 0x00000C;
+        // Table 2: G=1, G=1, G=1, A=3 -> lo: (1<<2)|1 = 0x05, hi: (3<<2)|1 = 0x0D (.ggga)
+        bp[0xFA] = 0x000005;
+        bp[0xFB] = 0x00000D;
+        // Table 3: B=2, B=2, B=2, A=3 -> lo: (2<<2)|2 = 0x0A, hi: (3<<2)|2 = 0x0E (.bbba)
+        bp[0xFC] = 0x00000A;
+        bp[0xFD] = 0x00000E;
+    }
 };
 
 // Tracks the TEV color/konst register a BP 0xE0-0xE7 write goes to.

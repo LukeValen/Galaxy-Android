@@ -118,6 +118,7 @@ public:
 
     // Texture holding the last EFB->XFB copy of the most recent render().
     GLuint xfbTexture() const { return mXfbTex; }
+    GLuint xfbFbo() const { return mXfbFbo; }
     int xfbWidth() const { return mXfbWidth; }
     int xfbHeight() const { return mXfbHeight; }
 
@@ -125,6 +126,7 @@ public:
 
 private:
     GLuint mXfbTex = 0;
+    GLuint mXfbFbo = 0;
     int mXfbWidth = 0, mXfbHeight = 0;
 };
 

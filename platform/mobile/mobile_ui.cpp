@@ -255,6 +255,8 @@ void Settings::load(const std::string& path) {
             else if (!strcmp(key, "mod_fly")) modFly = (val > 0.5f);
             else if (!strcmp(key, "mod_skip_cutscenes")) modSkipCutscenes = (val > 0.5f);
             else if (!strcmp(key, "mod_infinite_health")) modInfiniteHealth = (val > 0.5f);
+            else if (!strcmp(key, "target_fps")) targetFps = (int)val;  // 60, 90, or 120
+            else if (!strcmp(key, "adaptive_fps")) adaptiveFps = (val > 0.5f);
             else if (!strcmp(key, "full_touch_mode")) fullTouchMode = (val > 0.5f);
             else if (!strcmp(key, "perf_hud")) perfHudMode = (int)val;
         }
@@ -285,6 +287,8 @@ void Settings::save(const std::string& path) const {
     fprintf(f, "mod_fly=%d\n", modFly ? 1 : 0);
     fprintf(f, "mod_skip_cutscenes=%d\n", modSkipCutscenes ? 1 : 0);
     fprintf(f, "mod_infinite_health=%d\n", modInfiniteHealth ? 1 : 0);
+    fprintf(f, "target_fps=%d\n", targetFps);
+    fprintf(f, "adaptive_fps=%d\n", adaptiveFps ? 1 : 0);
     fclose(f);
     LOGI("Saved settings to %s", path.c_str());
 }
@@ -420,11 +424,22 @@ bool UIOverlay::init() {
 
 void UIOverlay::update(PortPadState& pad, int& spinFrames) {
     // 1. Decay virtual tap pulse for full-touch controls
-    if (mTapPendingFrames > 0) {
+    if (mTapDelayFrames > 0) {
+        mTapDelayFrames--;
+        // 1-frame target hover window so game engine registers isPointing before A press
+        pad.buttons &= ~0x0800;
+        mBtnAPressed = false;
+    } else if (mTapPendingFrames > 0) {
         mTapPendingFrames--;
-        pad.buttons |= 0x0C00; // WPAD_BUTTON_A | WPAD_BUTTON_B (allows single-tap to pass Wii 'Press A and B' prompt)
+        bool isTitle = (port_is_title_screen() != 0);
+        if (isTitle) {
+            pad.buttons |= 0x0C00; // WPAD_BUTTON_A | WPAD_BUTTON_B for title screen
+            mBtnBPressed = true;
+        } else {
+            pad.buttons |= 0x0800; // WPAD_BUTTON_A for menus, dialogue, save file select
+            mBtnBPressed = false;
+        }
         mBtnAPressed = true;
-        mBtnBPressed = true;
     } else {
         if (!mFingerDownOnA) {
             pad.buttons &= ~0x0800;
@@ -444,6 +459,12 @@ void UIOverlay::update(PortPadState& pad, int& spinFrames) {
     if (!mFingerDownOnSpin && spinFrames <= 0) {
         mBtnSpinPressed = false;
     }
+
+    // Always maintain valid pointer position
+    pad.pointerValid = 1;
+    pad.pointerX = mPointerX;
+    pad.pointerY = mPointerY;
+    pad.pointerDist = 2.0f;
 
     // 2. Hardware and Performance Monitoring Metrics (FPS, Frame Time, CPU, RAM)
     struct timespec ts;
@@ -726,8 +747,7 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                             else if (idx == 1) mSettings.opacity = 0.50f;
                             else if (idx == 2) mSettings.opacity = 0.75f;
                             else mSettings.opacity = 1.00f;
-                        }
-                        // Row 7: Button Size Segmented
+                        }// Row 7: Button Size Segmented
                         else if (contentRelY >= 378.0f * uiScale && contentRelY <= 432.0f * uiScale) {
                             float segW = contentW / 3.0f;
                             int idx = (int)((px - (drawerX + padX)) / segW);
@@ -735,7 +755,16 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                             else if (idx == 1) mSettings.scale = 1.00f;
                             else mSettings.scale = 1.25f;
                         }
-                        // Row 8: Layout Reposition / Reset
+                        // Row 8: Target FPS Switch
+                        else if (contentRelY >= 436.0f * uiScale && contentRelY <= 492.0f * uiScale) {
+                            float segW = contentW / 3.0f;
+                            int idx = (int)((px - (drawerX + padX)) / segW);
+                            if (idx <= 0) mSettings.targetFps = 60;
+                            else if (idx == 1) mSettings.targetFps = 90;
+                            else mSettings.targetFps = 120;
+                        }
+                        // Row 9: Layout Reposition / Reset
+
                         else if (contentRelY >= 436.0f * uiScale && contentRelY <= 492.0f * uiScale) {
                             float splitX = drawerX + padX + contentW * 0.56f;
                             if (px < splitX) {
@@ -868,28 +897,28 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
     mBtnDpadUp = false;
     mBtnDpadDown = false;
 
-    // Button layout positions
-    float btnBaseX = w - 160.0f * scale + mSettings.buttonOffsetX;
-    float btnBaseY = h - 160.0f * scale + mSettings.buttonOffsetY;
+    // Button layout positions - Ergonomic arc clear of HUD
+    float btnBaseX = w - 150.0f * scale + mSettings.buttonOffsetX;
+    float btnBaseY = h - 150.0f * scale + mSettings.buttonOffsetY;
 
     // A (Jump) - Primary action
     float aX = btnBaseX, aY = btnBaseY, aR = 54.0f * scale;
-    // B (Shoot Star Bit) - Lower left of A
-    float bX = btnBaseX - 120.0f * scale, bY = btnBaseY + 25.0f * scale, bR = 45.0f * scale;
-    // SPIN - Top right of A
-    float spinX = btnBaseX + 35.0f * scale, spinY = btnBaseY - 130.0f * scale, spinR = 48.0f * scale;
-    // Z (Crouch) - Top left of A
-    float zX = btnBaseX - 90.0f * scale, zY = btnBaseY - 105.0f * scale, zR = 44.0f * scale;
+    // B (Shoot Star Bit) - Upper left of A, completely elevated above bottom HUD
+    float bX = btnBaseX - 110.0f * scale, bY = btnBaseY - 20.0f * scale, bR = 45.0f * scale;
+    // SPIN - Directly above A
+    float spinX = btnBaseX + 25.0f * scale, spinY = btnBaseY - 125.0f * scale, spinR = 48.0f * scale;
+    // Z (Crouch) - Upper left of A
+    float zX = btnBaseX - 75.0f * scale, zY = btnBaseY - 110.0f * scale, zR = 44.0f * scale;
     // Plus (+) - Top right
-    float plusX = w - 70.0f * scale, plusY = 70.0f * scale, plusR = 34.0f * scale;
+    float plusX = w - 65.0f * scale, plusY = 65.0f * scale, plusR = 34.0f * scale;
 
-    // Camera D-Pad position
-    float baseDpadX = mSettings.dpadOnRight ? (w - 380.0f * scale) : (140.0f * scale);
-    float baseDpadY = mSettings.dpadOnRight ? (h - 220.0f * scale) : (h - 390.0f * scale);
+    // Camera D-Pad position - Elevated in upper section, 100% isolated from joystick
+    float baseDpadX = mSettings.dpadOnRight ? (w - 140.0f * scale) : (130.0f * scale);
+    float baseDpadY = mSettings.dpadOnRight ? (170.0f * scale) : (160.0f * scale);
     float dpadX = baseDpadX + mSettings.dpadOffsetX;
     float dpadY = baseDpadY + mSettings.dpadOffsetY;
-    float dpadArmDist = 38.0f * scale;
-    float dpadArmR = 24.0f * scale;
+    float dpadArmDist = 36.0f * scale;
+    float dpadArmR = 22.0f * scale;
     float dpadTotalR = (dpadArmDist + dpadArmR) * 1.15f;
 
     // Stick default position - Bottom left thumb area
@@ -915,24 +944,25 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
         mBtnDpadLeft = mBtnDpadRight = mBtnDpadUp = mBtnDpadDown = false;
         mDirty = true;
 
-        if (mSettings.fullTouchMode && mRightPointerId >= 0) {
+        if (mTouchPointerId >= 0) {
             int64_t now = currentTimeMs();
-            int64_t dur = now - mRightTouchStartTime;
+            int64_t dur = now - mTouchStartTime;
             float px = AMotionEvent_getX(event, pointerIndex);
             float py = AMotionEvent_getY(event, pointerIndex);
-            float fdx = px - mRightTouchStartX;
-            float fdy = py - mRightTouchStartY;
-            if (dur < 300 && (fdx * fdx + fdy * fdy <= 40.0f * uiScale * 40.0f * uiScale)) {
-                if (now - mLastRightTapTime < 320) {
+            float fdx = px - mTouchStartX;
+            float fdy = py - mTouchStartY;
+            if (dur < 350 && (fdx * fdx + fdy * fdy <= 45.0f * uiScale * 45.0f * uiScale)) {
+                if (now - mLastTapTime < 320) {
                     spinFrames = 6;
                     mBtnSpinPressed = true;
-                    mLastRightTapTime = 0;
+                    mLastTapTime = 0;
                 } else {
-                    mTapPendingFrames = 4; // Clean 4-frame pulse
-                    mLastRightTapTime = now;
+                    mTapDelayFrames = 0;
+                    mTapPendingFrames = 6;
+                    mLastTapTime = now;
                 }
             }
-            mRightPointerId = -1;
+            mTouchPointerId = -1;
         }
 
         pad.buttons = 0; // Clean release - update() will handle tap pulse if active
@@ -954,37 +984,44 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
             pad.stickY = 0.0f;
             mDirty = true;
         }
-        if (mSettings.fullTouchMode && liftedPid == mRightPointerId) {
+        if (liftedPid == mTouchPointerId) {
             int64_t now = currentTimeMs();
-            int64_t dur = now - mRightTouchStartTime;
+            int64_t dur = now - mTouchStartTime;
             float px = AMotionEvent_getX(event, pointerIndex);
             float py = AMotionEvent_getY(event, pointerIndex);
-            float fdx = px - mRightTouchStartX;
-            float fdy = py - mRightTouchStartY;
-            if (dur < 300 && (fdx * fdx + fdy * fdy <= 40.0f * uiScale * 40.0f * uiScale)) {
-                if (now - mLastRightTapTime < 320) {
+            float fdx = px - mTouchStartX;
+            float fdy = py - mTouchStartY;
+            if (dur < 350 && (fdx * fdx + fdy * fdy <= 45.0f * uiScale * 45.0f * uiScale)) {
+                if (now - mLastTapTime < 320) {
                     spinFrames = 6;
                     mBtnSpinPressed = true;
-                    mLastRightTapTime = 0;
+                    mLastTapTime = 0;
                 } else {
-                    mTapPendingFrames = 4;
-                    mLastRightTapTime = now;
+                    mTapDelayFrames = 0;
+                    mTapPendingFrames = 6;
+                    mLastTapTime = now;
                 }
             }
-            mRightPointerId = -1;
+            mTouchPointerId = -1;
         }
     }
 
-    // Full Touch Mode: Right-side touch acquisition for taps & flicks
-    if (mSettings.fullTouchMode && (action == AMOTION_EVENT_ACTION_DOWN || action == AMOTION_EVENT_ACTION_POINTER_DOWN)) {
+    // Touchscreen Star Pointer acquisition (any touch on screen)
+    if (action == AMOTION_EVENT_ACTION_DOWN || action == AMOTION_EVENT_ACTION_POINTER_DOWN) {
         float px = AMotionEvent_getX(event, pointerIndex);
         float py = AMotionEvent_getY(event, pointerIndex);
         int32_t pid = AMotionEvent_getPointerId(event, pointerIndex);
-        if (px >= w * 0.30f && mRightPointerId < 0) {
-            mRightPointerId = pid;
-            mRightTouchStartTime = currentTimeMs();
-            mRightTouchStartX = px;
-            mRightTouchStartY = py;
+        if (mTouchPointerId < 0 && pid != mStickPointerId) {
+            mTouchPointerId = pid;
+            mTouchStartTime = currentTimeMs();
+            mTouchStartX = px;
+            mTouchStartY = py;
+            if (vpW > 0 && vpH > 0) {
+                mPointerX = ((px - vpX) / (float)vpW) * 2.0f - 1.0f;
+                mPointerY = ((py - vpY) / (float)vpH) * 2.0f - 1.0f;
+                mPointerX = std::max(-1.0f, std::min(1.0f, mPointerX));
+                mPointerY = std::max(-1.0f, std::min(1.0f, mPointerY));
+            }
         }
     }
 
@@ -1134,16 +1171,7 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                 mPointerX = std::max(-1.0f, std::min(1.0f, mPointerX));
                 mPointerY = std::max(-1.0f, std::min(1.0f, mPointerY));
 
-                if (mSettings.fullTouchMode && pid == mRightPointerId && mRightTouchStartTime > 0) {
-                    int64_t now = currentTimeMs();
-                    float fdx = px - mRightTouchStartX;
-                    float fdy = py - mRightTouchStartY;
-                    if (now - mRightTouchStartTime < 250 && (fdx * fdx + fdy * fdy >= 45.0f * uiScale * 45.0f * uiScale)) {
-                        spinFrames = 6;
-                        mBtnSpinPressed = true;
-                        mRightTouchStartTime = 0; // consumed as spin flick!
-                    }
-                }
+                // Smooth pointer tracking without accidental spin flick trigger
             }
         }
     }
@@ -1158,9 +1186,15 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
     }
 
     if (mTapPendingFrames > 0) {
-        touchButtons |= 0x0C00; // WPAD_BUTTON_A | WPAD_BUTTON_B
+        bool isTitle = (port_is_title_screen() != 0);
+        if (isTitle) {
+            touchButtons |= 0x0C00; // WPAD_BUTTON_A | WPAD_BUTTON_B
+            mBtnBPressed = true;
+        } else {
+            touchButtons |= 0x0800; // WPAD_BUTTON_A
+            mBtnBPressed = false;
+        }
         mBtnAPressed = true;
-        mBtnBPressed = true;
     }
 
     pad.buttons = touchButtons;
@@ -1472,23 +1506,23 @@ void UIOverlay::render(int screenW, int screenH) {
         drawModernButton(btnBaseX, btnBaseY, 54.0f * scale, "A", 0x38BDF8, mBtnAPressed);
 
         // Button B (Star Bit Shoot) - Luminous Star Amber (#FBBF24)
-        drawModernButton(btnBaseX - 120.0f * scale, btnBaseY + 25.0f * scale, 45.0f * scale, "B", 0xFBBF24, mBtnBPressed);
+        drawModernButton(btnBaseX - 110.0f * scale, btnBaseY - 20.0f * scale, 45.0f * scale, "B", 0xFBBF24, mBtnBPressed);
 
         // Button SPIN - Luminous Emerald Mint (#34D399) with Cyclone Glyph
-        drawModernButton(btnBaseX + 35.0f * scale, btnBaseY - 130.0f * scale, 48.0f * scale, "SPIN", 0x34D399, mBtnSpinPressed, 1);
+        drawModernButton(btnBaseX + 25.0f * scale, btnBaseY - 125.0f * scale, 48.0f * scale, "SPIN", 0x34D399, mBtnSpinPressed, 1);
 
         // Button Z (Crouch) - Luminous Lavender Violet (#A78BFA)
-        drawModernButton(btnBaseX - 90.0f * scale, btnBaseY - 105.0f * scale, 44.0f * scale, "Z", 0xA78BFA, mBtnZPressed);
+        drawModernButton(btnBaseX - 75.0f * scale, btnBaseY - 110.0f * scale, 44.0f * scale, "Z", 0xA78BFA, mBtnZPressed);
 
         // Button + (Pause) - Minimalist Pearl Slate (#E2E8F0) with Vector Cross
-        drawModernButton(w - 70.0f * scale, 70.0f * scale, 34.0f * scale, "+", 0x94A3B8, mBtnPlusPressed, 2);
+        drawModernButton(w - 65.0f * scale, 65.0f * scale, 34.0f * scale, "+", 0x94A3B8, mBtnPlusPressed, 2);
 
         // ---------------------------------------------------------
         // 3. Camera D-Pad - Directional Precision Disc with Chevrons & Camera Icon
         // ---------------------------------------------------------
         if (mSettings.showDpad) {
-            float baseDpadX = mSettings.dpadOnRight ? (w - 380.0f * scale) : (140.0f * scale);
-            float baseDpadY = mSettings.dpadOnRight ? (h - 220.0f * scale) : (h - 390.0f * scale);
+            float baseDpadX = mSettings.dpadOnRight ? (w - 140.0f * scale) : (130.0f * scale);
+            float baseDpadY = mSettings.dpadOnRight ? (170.0f * scale) : (160.0f * scale);
             float dpadX = baseDpadX + mSettings.dpadOffsetX;
             float dpadY = baseDpadY + mSettings.dpadOffsetY;
             float dialR = 56.0f * scale;

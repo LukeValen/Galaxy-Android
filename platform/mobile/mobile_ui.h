@@ -27,6 +27,10 @@ struct Settings {
     bool modSkipCutscenes = false;
     bool modInfiniteHealth = false;
 
+    // FPS configuration
+    int targetFps = 60;  // 60, 90, or 120
+    bool adaptiveFps = true;
+
     bool fullTouchMode = true;
     int perfHudMode = 2; // 0 = Off, 1 = FPS, 2 = Full Hardware Stats
 
@@ -120,10 +124,11 @@ private:
 
     // Full Touch Gesture & Tap State
     int mTapPendingFrames = 0;
-    int mRightPointerId = -1;
-    int64_t mRightTouchStartTime = 0;
-    float mRightTouchStartX = 0.0f, mRightTouchStartY = 0.0f;
-    int64_t mLastRightTapTime = 0;
+    int mTapDelayFrames = 0;
+    int mTouchPointerId = -1;
+    int64_t mTouchStartTime = 0;
+    float mTouchStartX = 0.0f, mTouchStartY = 0.0f;
+    int64_t mLastTapTime = 0;
 
     // Hardware & Performance Monitoring Metrics
     float mCurrentFps = 60.0f;

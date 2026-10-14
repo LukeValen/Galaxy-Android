@@ -322,6 +322,10 @@ struct Renderer::Impl {
         GLuint buf[6] = {};    // vbo, recVbo, ibo, rowBuf, recBuf, stateBuf
         size_t cap[6] = {};    // bytes allocated
         GLuint tex[4] = {};    // rowTex, recTex, stateTex, vtxRecTex
+        u32 rowCapH = 0;
+        u32 recCapH = 0;
+        u32 stateCapH = 0;
+        u32 vtxRecCapH = 0;
     };
     FrameBuffers frameBufs[3];
     int frameBufNext = 0;
@@ -455,6 +459,9 @@ void Renderer::Impl::init() {
     port_log("gl: %d program binary formats; extensions: %s", numBinFmt, exts.c_str());
     if (fsBlocks < 1 || maxVertexTexUnits < 4) {
         port_log("gl: this GPU lacks the fragment storage blocks or vertex texture units the renderer needs");
+    }
+    if (maxTexBufSize < 64) {
+        port_log("gl: this GPU has insufficient texture buffer size (%d bytes, need >= 64)", maxTexBufSize);
     }
 
     GLuint vs = compileShader(GL_VERTEX_SHADER, kCopyVs), fs = compileShader(GL_FRAGMENT_SHADER, kCopyFs);
@@ -993,7 +1000,7 @@ u32 Builder::drawRecord(bool useVr, bool sky, bool pointer, bool dualTex, u32 nu
     rec[kRecPixel] = pixBase;
     rec[kRecMtxIdxA] = xfRegs[0x18];
     rec[kRecMtxIdxB] = xfRegs[0x19];
-    rec[kRecFlags] = (useVr ? 1u : 0u) | (useVr && sky ? 2u : 0u) | (pointer ? 4u : 0u);
+    rec[kRecFlags] = (useVr ? 1u : 0u) | (sky ? 2u : 0u) | (pointer ? 4u : 0u);
     size_t n = recs.size();
     if (n >= kRecWords && memcmp(&recs[n - kRecWords], rec, sizeof(rec)) == 0) {
         return (u32)(n / kRecWords) - 1;
@@ -1168,6 +1175,16 @@ void Builder::build(std::shared_ptr<const Frame> frame, Prepared& out) {
     indices.clear();
     stateIndex.clear();
     memcpy(bp, f.startBp, sizeof(bp));
+    if (bp[0xF6] == 0 && bp[0xF7] == 0) {
+        bp[0xF6] = 0x000004;
+        bp[0xF7] = 0x00000E;
+        bp[0xF8] = 0x000000;
+        bp[0xF9] = 0x00000C;
+        bp[0xFA] = 0x000005;
+        bp[0xFB] = 0x00000D;
+        bp[0xFC] = 0x00000A;
+        bp[0xFD] = 0x00000E;
+    }
     memcpy(tevReg, f.startTevReg, sizeof(tevReg));
     memcpy(tevKonst, f.startTevKonst, sizeof(tevKonst));
     memcpy(xfRegs, f.startXfRegs, sizeof(xfRegs));
@@ -1367,7 +1384,7 @@ void Builder::build(std::shared_ptr<const Frame> frame, Prepared& out) {
                     u32 info = uid.texMtxInfo[i];
                     perDraw |= ((info >> 1) & 1) && ((info >> 4) & 7) == 0 && ((info >> 7) & 31) == 0;
                 }
-                if (it.useVr && perDraw) {
+                if (perDraw) {
                     uid.screenTexGens = screenTexGens(f, it, first, uid);
                 }
                 it.uid = uidFor(uid);
@@ -1410,9 +1427,9 @@ void Builder::build(std::shared_ptr<const Frame> frame, Prepared& out) {
             it.depthFunc = zf[(zm >> 1) & 7];
             u32 cull = (bp[0x00] >> 14) & 3;
             it.cull = (cull != 0);
-            // GameCube GX hwMode is (((mode & 1) << 1) | ((mode & 2) >> 1)):
-            // cull == 1 is GX_CULL_BACK -> GL_BACK, cull == 2 is GX_CULL_FRONT -> GL_FRONT
-            it.cullFace = (cull == 1) ? GL_BACK : (cull == 2) ? GL_FRONT : GL_FRONT_AND_BACK;
+            // GX uses clockwise front faces; in OpenGL's default CCW front face convention,
+            // GX_CULL_BACK (hwMode 1) corresponds to GL_FRONT and GX_CULL_FRONT (hwMode 2) to GL_BACK
+            it.cullFace = (cull == 1) ? GL_FRONT : (cull == 2) ? GL_BACK : GL_FRONT_AND_BACK;
 
             it.texMask = usedTexUnits(bp);
             static const u8 m0[8] = {0x80, 0x81, 0x82, 0x83, 0xA0, 0xA1, 0xA2, 0xA3};
@@ -1499,8 +1516,8 @@ void Renderer::Impl::upload(Prepared& p, bool syncPrograms) {
         glBindBuffer(target, fb.buf[i]);
         if (bytes > fb.cap[i]) {
             fb.cap[i] = bytes + bytes / 4 + 4096;
-            glBufferData(target, (GLsizeiptr)fb.cap[i], nullptr, GL_DYNAMIC_DRAW);
         }
+        glBufferData(target, (GLsizeiptr)fb.cap[i], nullptr, GL_DYNAMIC_DRAW);
         if (bytes) {
             glBufferSubData(target, 0, (GLsizeiptr)bytes, data);
         }
@@ -1512,15 +1529,70 @@ void Renderer::Impl::upload(Prepared& p, bool syncPrograms) {
     put(4, GL_SHADER_STORAGE_BUFFER, p.recs.data(), p.recs.size() * 4);
     put(5, GL_SHADER_STORAGE_BUFFER, p.states.data(), p.states.size() * 4);
 
-    glBindTexture(GL_TEXTURE_BUFFER, fb.tex[0]);
-    glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32F, fb.buf[3]);
-    glBindTexture(GL_TEXTURE_BUFFER, fb.tex[1]);
-    glTexBuffer(GL_TEXTURE_BUFFER, GL_R32UI, fb.buf[4]);
-    glBindTexture(GL_TEXTURE_BUFFER, fb.tex[2]);
-    glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32F, fb.buf[5]);
-    glBindTexture(GL_TEXTURE_BUFFER, fb.tex[3]);
-    glTexBuffer(GL_TEXTURE_BUFFER, GL_R32UI, fb.buf[1]);
-    glBindTexture(GL_TEXTURE_BUFFER, 0);
+    // Upload rows as 2D texture (width 2048, each texel is vec4/RGBA32F)
+    u32 rowCount = (u32)(p.rows.size() / 4);
+    u32 rowH = (rowCount + 2047) / 2048;
+    if (rowH < 1) rowH = 1;
+    p.rows.resize((size_t)rowH * 2048 * 4, 0.0f);
+    glBindTexture(GL_TEXTURE_2D, fb.tex[0]);
+    if (rowH > fb.rowCapH) {
+        fb.rowCapH = rowH + 64;
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, 2048, (GLsizei)fb.rowCapH, 0, GL_RGBA, GL_FLOAT, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    }
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 2048, (GLsizei)rowH, GL_RGBA, GL_FLOAT, p.rows.data());
+
+    // Upload recs as 2D texture (width 2048, each texel is u32/R32UI)
+    u32 recCount = (u32)p.recs.size();
+    u32 recH = (recCount + 2047) / 2048;
+    if (recH < 1) recH = 1;
+    p.recs.resize((size_t)recH * 2048, 0u);
+    glBindTexture(GL_TEXTURE_2D, fb.tex[1]);
+    if (recH > fb.recCapH) {
+        fb.recCapH = recH + 64;
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_R32UI, 2048, (GLsizei)fb.recCapH, 0, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    }
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 2048, (GLsizei)recH, GL_RED_INTEGER, GL_UNSIGNED_INT, p.recs.data());
+
+    // Upload states as 2D texture (width 2048, each texel is vec4/RGBA32F)
+    u32 stCount = (u32)(p.states.size() / 4);
+    u32 stH = (stCount + 2047) / 2048;
+    if (stH < 1) stH = 1;
+    p.states.resize((size_t)stH * 2048 * 4, 0.0f);
+    glBindTexture(GL_TEXTURE_2D, fb.tex[2]);
+    if (stH > fb.stateCapH) {
+        fb.stateCapH = stH + 64;
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, 2048, (GLsizei)fb.stateCapH, 0, GL_RGBA, GL_FLOAT, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    }
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 2048, (GLsizei)stH, GL_RGBA, GL_FLOAT, p.states.data());
+
+    // Upload vtxRec as 2D texture (width 2048, each texel is u32/R32UI)
+    u32 vtxRecCount = (u32)p.vtxRec.size();
+    u32 vtxRecH = (vtxRecCount + 2047) / 2048;
+    if (vtxRecH < 1) vtxRecH = 1;
+    p.vtxRec.resize((size_t)vtxRecH * 2048, 0u);
+    glBindTexture(GL_TEXTURE_2D, fb.tex[3]);
+    if (vtxRecH > fb.vtxRecCapH) {
+        fb.vtxRecCapH = vtxRecH + 64;
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_R32UI, 2048, (GLsizei)fb.vtxRecCapH, 0, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    }
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 2048, (GLsizei)vtxRecH, GL_RED_INTEGER, GL_UNSIGNED_INT, p.vtxRec.data());
+    glBindTexture(GL_TEXTURE_2D, 0);
 
     vbo = fb.buf[0];
     recVbo = fb.buf[1];
@@ -1672,6 +1744,7 @@ void Renderer::Impl::doCopy(const Item& it, EfbTarget& src, Renderer& r, bool vr
             glDisable(GL_SCISSOR_TEST);
             glBlitFramebuffer(sx0, sy0, sx1, sy1, 0, 0, dw, dh, GL_COLOR_BUFFER_BIT, GL_NEAREST);
             r.mXfbTex = xfb.tex;
+            r.mXfbFbo = xfb.fbo;
             r.mXfbWidth = dw;
             r.mXfbHeight = dh;
         }
@@ -1854,8 +1927,7 @@ void Renderer::Impl::execute(EfbTarget& efb, const EyeView* eye, EfbTarget* hud,
         if (transparent) {
             glClearColor(0, 0, 0, 0);
         } else {
-            // Clear color RGB from clearAR/GB, but keep alpha at 0 so screen-alpha captures don't treat entire background as opaque silhouette
-            glClearColor((clearAR & 255) / 255.0f, ((clearGB >> 8) & 255) / 255.0f, (clearGB & 255) / 255.0f, 0.0f);
+            glClearColor((clearAR & 255) / 255.0f, ((clearGB >> 8) & 255) / 255.0f, (clearGB & 255) / 255.0f, ((clearAR >> 8) & 255) / 255.0f);
         }
         glClearDepthf(clearZ / 16777215.0f);
         glStencilMask(0xFF);
@@ -2004,19 +2076,19 @@ void Renderer::Impl::execute(EfbTarget& efb, const EyeView* eye, EfbTarget* hud,
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, recVbo);
 
     glActiveTexture(GL_TEXTURE8);
-    glBindTexture(GL_TEXTURE_BUFFER, rowTex);
+    glBindTexture(GL_TEXTURE_2D, rowTex);
     glBindSampler(8, 0);
 
     glActiveTexture(GL_TEXTURE9);
-    glBindTexture(GL_TEXTURE_BUFFER, recTex);
+    glBindTexture(GL_TEXTURE_2D, recTex);
     glBindSampler(9, 0);
 
     glActiveTexture(GL_TEXTURE10);
-    glBindTexture(GL_TEXTURE_BUFFER, stateTex);
+    glBindTexture(GL_TEXTURE_2D, stateTex);
     glBindSampler(10, 0);
 
     glActiveTexture(GL_TEXTURE11);
-    glBindTexture(GL_TEXTURE_BUFFER, vtxRecTex);
+    glBindTexture(GL_TEXTURE_2D, vtxRecTex);
     glBindSampler(11, 0);
 
     glActiveTexture(GL_TEXTURE0);
@@ -2186,8 +2258,13 @@ void Renderer::Impl::execute(EfbTarget& efb, const EyeView* eye, EfbTarget* hud,
                 continue;
             }
             if (tr & 0x80000000u) {
-                auto cit = copies.find(copyKey(copySlot, (tr & 0x7FFFFFFF) << 5));
-                bindTexture(u, cit != copies.end() ? cit->second.tex : 0, sampler(it.texMode0[u], it.texMode1[u], 1));
+                u32 addr = (tr & 0x7FFFFFFF) << 5;
+                auto cit = copies.find(copyKey(copySlot, addr));
+                if (cit == copies.end() && copySlot != 0) {
+                    cit = copies.find(copyKey(0, addr));
+                }
+                GLuint ctex = (cit != copies.end()) ? cit->second.tex : 0;
+                bindTexture(u, ctex, sampler(it.texMode0[u], it.texMode1[u], 1));
             } else if (tr < textures.size()) {
                 bindTexture(u, textures[tr]->glTex, sampler(it.texMode0[u], it.texMode1[u], textures[tr]->levels));
             }

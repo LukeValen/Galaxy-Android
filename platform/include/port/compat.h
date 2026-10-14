@@ -137,6 +137,7 @@ const void* port_vr_transit_host(void);
 // The pause menu reports each frame whether its buttons wait for a choice;
 // meanwhile the VR layer shows its settings panel beside it.
 void port_vr_pause_menu(int selecting);
+int port_is_title_screen(void);
 
 // Holding A skips cutscenes (platform/src/port/cutscene_skip.cpp).  The game
 // reports each update which kind of cutscene runs; once A has been held long
