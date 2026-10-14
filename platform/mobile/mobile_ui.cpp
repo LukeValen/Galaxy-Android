@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include <algorithm>
 #include <string>
@@ -524,7 +525,9 @@ void UIOverlay::update(PortPadState& pad, int& spinFrames) {
         mFpsFrameCounter = 0;
         mFpsLastTimeNs = nowNs;
 
-        // Sample System CPU usage from /proc/stat
+        // Sample CPU usage:
+        // 1. Try global /proc/stat (available on older Android or rooted/permissive ROMs)
+        bool gotCpu = false;
         static unsigned long long prevUser = 0, prevNice = 0, prevSystem = 0, prevIdle = 0;
         FILE* fpStat = fopen("/proc/stat", "r");
         if (fpStat) {
@@ -537,6 +540,7 @@ void UIOverlay::update(PortPadState& pad, int& spinFrames) {
                     unsigned long long idleDiff = (idle + iowait) - prevIdle;
                     if (totalDiff > 0 && idleDiff <= totalDiff) {
                         mCpuUsagePercent = (float)(totalDiff - idleDiff) * 100.0f / (float)totalDiff;
+                        gotCpu = true;
                     }
                 }
                 prevUser = u + n;
@@ -544,6 +548,38 @@ void UIOverlay::update(PortPadState& pad, int& spinFrames) {
                 prevIdle = idle + iowait;
             }
             fclose(fpStat);
+        }
+
+        // 2. SELinux on Android 8+ blocks app access to /proc/stat. Fall back to process CPU via /proc/self/stat
+        if (!gotCpu) {
+            static unsigned long long prevProcTicks = 0;
+            FILE* fpSelf = fopen("/proc/self/stat", "r");
+            if (fpSelf) {
+                char statBuf[512];
+                if (fgets(statBuf, sizeof(statBuf), fpSelf)) {
+                    char* paren = strrchr(statBuf, ')');
+                    if (paren) {
+                        unsigned long long utime = 0, stime = 0;
+                        // Fields after ')': state, ppid, pgrp, session, tty_nr, tpgid, flags, minflt, cminflt, majflt, cmajflt, utime, stime
+                        if (sscanf(paren + 1, " %*c %*d %*d %*d %*d %*d %*u %*u %*u %*u %*u %llu %llu", &utime, &stime) == 2) {
+                            unsigned long long totalTicks = utime + stime;
+                            if (prevProcTicks > 0 && totalTicks >= prevProcTicks && sec > 0.001f) {
+                                long clkTck = sysconf(_SC_CLK_TCK);
+                                if (clkTck <= 0) clkTck = 100;
+                                long numCores = sysconf(_SC_NPROCESSORS_ONLN);
+                                if (numCores <= 0) numCores = 1;
+                                float cpuSec = (float)(totalTicks - prevProcTicks) / (float)clkTck;
+                                float usage = (cpuSec / sec) * 100.0f / (float)numCores;
+                                if (usage < 0.0f) usage = 0.0f;
+                                if (usage > 100.0f) usage = 100.0f;
+                                mCpuUsagePercent = usage;
+                            }
+                            prevProcTicks = totalTicks;
+                        }
+                    }
+                }
+                fclose(fpSelf);
+            }
         }
 
         // Sample RAM usage from /proc/self/statm
