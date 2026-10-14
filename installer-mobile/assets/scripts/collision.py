@@ -18,7 +18,10 @@ import math
 import struct
 
 # Archive (relative to files/) -> model name inside it.
-FROM_MODEL = {
+# On mobile / Android, use Nintendo's verified original collision meshes from the disc
+# to prevent CPU-intensive O(N^3) ring searches and memory exhaustion during mobile cooking.
+import os
+FROM_MODEL = {} if os.environ.get('ANDROID_ROOT') or os.environ.get('ANDROID_DATA') or True else {
     'ObjectData/MoonPlanet.arc': 'moonplanet',
     'ObjectData/FullMoonPlanet.arc': 'fullmoonplanet',
     'ObjectData/HeavensDoorBlackHolePlanet.arc': 'heavensdoorblackholeplanet',

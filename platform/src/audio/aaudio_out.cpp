@@ -154,6 +154,14 @@ aaudio_data_callback_result_t dataCallback(AAudioStream*, void*, void* audioData
         memset(out + n * 2, 0, (size_t)(numFrames - n) * 4);
         if (sPlaying && !port_is_paused()) {
             sUnderruns++;
+            if (sStream) {
+                int32_t cur = AAudioStream_getBufferSizeInFrames(sStream);
+                int32_t cap = AAudioStream_getBufferCapacityInFrames(sStream);
+                int32_t burst = AAudioStream_getFramesPerBurst(sStream);
+                if (burst > 0 && cur + burst <= cap) {
+                    AAudioStream_setBufferSizeInFrames(sStream, cur + burst);
+                }
+            }
         }
         sPlaying = false;
     } else {
@@ -192,15 +200,13 @@ bool openStream(u32 rate) {
         return false;
     }
     sDeviceRate = AAudioStream_getSampleRate(sStream);
-    // The device-side queue: 3 bursts (12 ms on the Quest) on top of the
-    // ring, instead of the default 8.
+    // Dynamic low-latency buffer sizing: start at 3 bursts (~6-12 ms latency),
+    // and let dataCallback dynamically expand if hardware underruns occur.
     int32_t burst = AAudioStream_getFramesPerBurst(sStream);
     if (burst > 0) {
-#if TARGET_MOBILE
-        AAudioStream_setBufferSizeInFrames(sStream, burst * 8);
-#else
-        AAudioStream_setBufferSizeInFrames(sStream, burst * 3);
-#endif
+        int32_t cap = AAudioStream_getBufferCapacityInFrames(sStream);
+        int32_t desired = std::min(burst * 3, cap);
+        AAudioStream_setBufferSizeInFrames(sStream, desired);
     }
     sRingRead.store(sRingWrite.load());
     sResampler = Resampler();

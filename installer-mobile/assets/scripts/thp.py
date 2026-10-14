@@ -6,25 +6,11 @@ oriented and stay as they are.
 The file is copied and then patched in place, since movies are hundreds of
 megabytes.
 """
+import mmap
 import shutil
 import struct
 
 AUDIO_HEADER_HALFWORDS = 16 + 16 + 4  # lCoef[8][2], rCoef[8][2], lYn1/2, rYn1/2
-
-
-def _swap32(fh, off, count):
-    fh.seek(off)
-    raw = fh.read(4 * count)
-    fh.seek(off)
-    fh.write(struct.pack('<%dI' % count, *struct.unpack('>%dI' % count, raw)))
-    return struct.unpack('>%dI' % count, raw)
-
-
-def _swap16(fh, off, count):
-    fh.seek(off)
-    raw = fh.read(2 * count)
-    fh.seek(off)
-    fh.write(struct.pack('<%dH' % count, *struct.unpack('>%dH' % count, raw)))
 
 
 def cook_thp(src, dst):
@@ -35,37 +21,64 @@ def cook_thp(src, dst):
         raise ValueError('%s: not a version 1.1 THP file' % src)
     shutil.copyfile(src, dst)
     with open(dst, 'r+b') as fh:
-        fields = _swap32(fh, 4, 11)  # everything after the magic (frameRate swaps like a u32)
-        (_version, _buf, _maxSamples, _rate, num_frames, first_size, _data_size,
-         comp_off, _offsets_off, movie_off, _final_off) = fields
+        with mmap.mmap(fh.fileno(), 0) as mm:
+            # Swap fields 4..15 (11 uint32s)
+            for i in range(11):
+                off = 4 + 4 * i
+                v = struct.unpack_from('>I', mm, off)[0]
+                struct.pack_into('<I', mm, off, v)
 
-        ncomp = _swap32(fh, comp_off, 1)[0]
-        fh.seek(comp_off + 4)
-        kinds = list(fh.read(16)[:ncomp])
-        pos = comp_off + 0x14
-        tracks = 1
-        for kind in kinds:
-            if kind == 0:    # video: xSize, ySize, videoType
-                _swap32(fh, pos, 3)
-                pos += 12
-            elif kind == 1:  # audio: channels, frequency, samples, tracks
-                tracks = _swap32(fh, pos, 4)[3]
-                pos += 16
-            else:
-                raise ValueError('%s: unknown THP component %d' % (src, kind))
+            fields = struct.unpack_from('<11I', mm, 4)
+            (_version, _buf, _maxSamples, _rate, num_frames, first_size, _data_size,
+             comp_off, _offsets_off, movie_off, _final_off) = fields
 
-        off, size = movie_off, first_size
-        for _ in range(num_frames):
-            words = _swap32(fh, off, 2 + ncomp)
-            next_size, comp_sizes = words[0], words[2:]
-            data = off + 8 + 4 * ncomp
-            for kind, comp_size in zip(kinds, comp_sizes):
-                if kind == 1:
-                    for t in range(tracks):
-                        rec = data + comp_size * t
-                        _swap32(fh, rec, 2)  # offsetNextChannel, sampleSize
-                        _swap16(fh, rec + 8, AUDIO_HEADER_HALFWORDS)
-                data += comp_size
-            off += size
-            size = next_size
+            ncomp = struct.unpack_from('>I', mm, comp_off)[0]
+            struct.pack_into('<I', mm, comp_off, ncomp)
+
+            kinds = list(mm[comp_off + 4:comp_off + 4 + ncomp])
+            pos = comp_off + 0x14
+            tracks = 1
+            for kind in kinds:
+                if kind == 0:    # video: xSize, ySize, videoType
+                    for k in range(3):
+                        v = struct.unpack_from('>I', mm, pos + 4 * k)[0]
+                        struct.pack_into('<I', mm, pos + 4 * k, v)
+                    pos += 12
+                elif kind == 1:  # audio: channels, frequency, samples, tracks
+                    for k in range(4):
+                        v = struct.unpack_from('>I', mm, pos + 4 * k)[0]
+                        struct.pack_into('<I', mm, pos + 4 * k, v)
+                    tracks = struct.unpack_from('<I', mm, pos + 12)[0]
+                    pos += 16
+                else:
+                    raise ValueError('%s: unknown THP component %d' % (src, kind))
+
+            off, size = movie_off, first_size
+            for _ in range(num_frames):
+                if off + 8 + 4 * ncomp > len(mm):
+                    break
+                next_size = struct.unpack_from('>I', mm, off)[0]
+                prev_size = struct.unpack_from('>I', mm, off + 4)[0]
+                struct.pack_into('<II', mm, off, next_size, prev_size)
+
+                comp_sizes = []
+                for c in range(ncomp):
+                    cs = struct.unpack_from('>I', mm, off + 8 + 4 * c)[0]
+                    struct.pack_into('<I', mm, off + 8 + 4 * c, cs)
+                    comp_sizes.append(cs)
+
+                data = off + 8 + 4 * ncomp
+                for kind, comp_size in zip(kinds, comp_sizes):
+                    if kind == 1:
+                        for t in range(tracks):
+                            rec = data + comp_size * t
+                            if rec + 8 + AUDIO_HEADER_HALFWORDS * 2 <= len(mm):
+                                o1, o2 = struct.unpack_from('>II', mm, rec)
+                                struct.pack_into('<II', mm, rec, o1, o2)
+                                for h in range(AUDIO_HEADER_HALFWORDS):
+                                    hw = struct.unpack_from('>H', mm, rec + 8 + 2 * h)[0]
+                                    struct.pack_into('<H', mm, rec + 8 + 2 * h, hw)
+                    data += comp_size
+                off += size
+                size = next_size
     return num_frames

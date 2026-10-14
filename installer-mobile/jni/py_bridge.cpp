@@ -229,10 +229,13 @@ Java_com_galaxy_installer_CookerEngine_runCooker(
 
     // Execute cook.py conversion
     std::string runScript =
-        "import cook, android_bridge, traceback\n"
-        "def on_progress(done, total):\n"
+        "import cook, android_bridge, traceback, os\n"
+        "def on_progress(done, total, *args):\n"
         "    pct = int(done * 100 / total) if total > 0 else 0\n"
-        "    android_bridge.progress_bridge(pct, f'Cooking assets: {done}/{total} ({pct}%)')\n"
+        "    src = args[0] if args else ''\n"
+        "    name = os.path.basename(src) if src else ''\n"
+        "    msg = f'Cooking: {done}/{total} ({pct}%) - {name}' if name else f'Cooking assets: {done}/{total} ({pct}%)'\n"
+        "    android_bridge.progress_bridge(pct, msg)\n"
         "try:\n"
         "    print('[Engine] Beginning conversion...')\n"
         "    ret = cook.convert(\n"

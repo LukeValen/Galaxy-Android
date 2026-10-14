@@ -101,6 +101,10 @@ private:
     // Descriptor layouts for SSBO storage buffers and UBOs
     VkDescriptorSetLayout mStorageDescLayout = VK_NULL_HANDLE;
     VkDescriptorPool mDescriptorPool = VK_NULL_HANDLE;
+    VkPipelineLayout mPipelineLayout = VK_NULL_HANDLE;
+    std::unordered_map<uint64_t, VkPipeline> mPipelineCache;
+
+    VkShaderModule createShaderModule(const uint32_t* code, size_t sizeBytes);
 
     std::shared_ptr<const Frame> mCurrentFrame;
     uint64_t mFrameNumber = 0;

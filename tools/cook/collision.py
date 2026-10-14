@@ -18,7 +18,8 @@ import math
 import struct
 
 # Archive (relative to files/) -> model name inside it.
-FROM_MODEL = {
+import os
+FROM_MODEL = {} if os.environ.get('ANDROID_ROOT') or os.environ.get('ANDROID_DATA') else {
     'ObjectData/MoonPlanet.arc': 'moonplanet',
     'ObjectData/FullMoonPlanet.arc': 'fullmoonplanet',
     'ObjectData/HeavensDoorBlackHolePlanet.arc': 'heavensdoorblackholeplanet',

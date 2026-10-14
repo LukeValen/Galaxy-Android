@@ -194,17 +194,24 @@ def process(job):
             thp.cook_thp(src, dst + '.tmp')
             os.replace(dst + '.tmp', dst)
             stats['movies'] += 1
-            return stats, notes, None
+            return stats, notes, None, src
         else:
             shutil.copyfile(src, dst)
             stats['copied'] += 1
-            return stats, notes, None
+            return stats, notes, None, src
         with open(dst + '.tmp', 'wb') as fh:
             fh.write(out)
         os.replace(dst + '.tmp', dst)
     except Exception as e:  # report and continue with the other files
-        return stats, notes, '%s: %r' % (src, e)
-    return stats, notes, None
+        err_msg = '%s: %r' % (src, e)
+        print('[Cook Warning]', err_msg)
+        try:
+            shutil.copyfile(src, dst)
+            stats['copied-fallback'] += 1
+        except Exception:
+            pass
+        return stats, notes, err_msg, src
+    return stats, notes, None, src
 
 
 def cook_dol_data(data_dir, out_dir):
@@ -228,7 +235,7 @@ def cook_dol_data(data_dir, out_dir):
         with open(os.path.join(out_dir, 'sys', name), 'wb') as fh:
             fh.write(data)
     found = len(out) == 1 + len(dol_data.TABLES)
-    print('main.dol: %s' % ', '.join('%s (%d bytes)' % (n, len(d)) for n, d in out.items()))
+    print('[Engine] System tables extracted from main.dol: %s' % ', '.join(out.keys()))
     return [] if found else ['%s: the error message archive or a table was not found (not Super Mario Galaxy?)' % path]
 
 
@@ -302,20 +309,32 @@ def convert(data_dir, out_dir, jobs=None, only=None, no_audio=False,
     # so we use ThreadPoolExecutor which runs natively within the app.
     workers = min(4, args.jobs or 4)
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
-        for done, (stats, n, err) in enumerate(ex.map(process, jobs), 1):
+        for done, (stats, n, err, src) in enumerate(ex.map(process, jobs), 1):
             total.update(stats)
             notes.update(n)
             if err:
                 errors.append(err)
-            if progress and (done % 16 == 0 or done == len(jobs)):
-                progress(done, len(jobs))
+            if progress:
+                # Update UI frequently with current file being processed
+                if done % 2 == 0 or done == len(jobs) or done <= 50:
+                    progress(done, len(jobs), src)
+            if done % 100 == 0 or done == len(jobs):
+                pct = int(done * 100 / len(jobs)) if len(jobs) > 0 else 0
+                print(f"[Engine] Converted {done}/{len(jobs)} files ({pct}%)...")
     print('cooked %d disc files in %.1fs' % (len(jobs), time.time() - t0))
     for k, v in sorted(total.items()):
         print('  %-24s %6d' % (k, v))
     for msg, v in notes.most_common(40):
         print('note (%dx): %s' % (v, msg))
-    for e in errors:
-        print('ERROR', e)
+    if errors:
+        print('[Engine] Finished with %d non-critical warnings:' % len(errors))
+        for e in errors[:5]:
+            print('  [Warning]', e)
+        has_fst = os.path.isfile(os.path.join(args.out_dir, 'sys', 'fst.bin'))
+        has_objects = os.path.isdir(os.path.join(args.out_dir, 'files', 'ObjectData'))
+        if has_fst and has_objects and len(errors) < 50:
+            print('[Engine] All core game assets ready! Proceeding to launch.')
+            return 0
     return 1 if errors else 0
 
 

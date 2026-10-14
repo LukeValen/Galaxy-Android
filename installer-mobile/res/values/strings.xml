@@ -9,7 +9,7 @@
     <string name="btn_auto_detect">Scan Downloads Folder</string>
     <string name="no_source_selected">No game file or folder selected</string>
     <string name="section_options">Step 2: Conversion Options</string>
-    <string name="include_movies">Include Cutscene Movies (~2.3 GB)</string>
+    <string name="include_movies">Include Cutscene Movies (~2.3 GB) (Optional - Faster setup without)</string>
     <string name="section_cook">Step 3: Prepare Game Data</string>
     <string name="btn_start_cook">Start Cooking Game Data</string>
     <string name="btn_launch_game">Launch GalaxyMobile 🚀</string>

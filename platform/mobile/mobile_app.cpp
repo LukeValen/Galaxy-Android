@@ -689,6 +689,22 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
             mobile_ui::get().render(a.screenWidth, a.screenHeight);
 
             eglSwapBuffers(a.display, a.surface);
+
+            // Precise frame pacer (60, 90, 120 FPS target)
+            static int64_t lastFrameNs = 0;
+            int targetFps = mobile_ui::get().settings().targetFps;
+            if (targetFps > 0) {
+                int64_t framePeriodNs = 1000000000ll / targetFps;
+                int64_t nowNs = port_host_time_ns();
+                int64_t elapsedNs = nowNs - lastFrameNs;
+                if (elapsedNs < framePeriodNs && lastFrameNs != 0) {
+                    int64_t sleepUs = (framePeriodNs - elapsedNs) / 1000;
+                    if (sleepUs > 300) {
+                        usleep((useconds_t)sleepUs);
+                    }
+                }
+                lastFrameNs = port_host_time_ns();
+            }
         } else {
             if (mobile_ui::get().needsRedraw()) {
                 glBindFramebuffer(GL_FRAMEBUFFER, 0);
