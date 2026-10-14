@@ -435,7 +435,12 @@ void Renderer::Impl::init() {
     glGetIntegerv(GL_MAX_VERTEX_SHADER_STORAGE_BLOCKS, &vsBlocks);
     glGetIntegerv(GL_MAX_FRAGMENT_SHADER_STORAGE_BLOCKS, &fsBlocks);
     glGetIntegerv(GL_MAX_SHADER_STORAGE_BLOCK_SIZE, &blockSize);
-    port_log("gl: %d vertex attribs, %d/%d storage blocks (vs/fs), %d MB max block", attribs, vsBlocks, fsBlocks, blockSize >> 20);
+    GLint maxTexBufSize = 0, maxVertexTexUnits = 0, maxCombinedTexUnits = 0;
+    glGetIntegerv(GL_MAX_TEXTURE_BUFFER_SIZE, &maxTexBufSize);
+    glGetIntegerv(GL_MAX_VERTEX_TEXTURE_IMAGE_UNITS, &maxVertexTexUnits);
+    glGetIntegerv(GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS, &maxCombinedTexUnits);
+    port_log("gl: %d vertex attribs, %d/%d storage blocks (vs/fs), %d MB max block, texBuf max size %d, vtx tex units %d, combined tex units %d",
+             attribs, vsBlocks, fsBlocks, blockSize >> 20, maxTexBufSize, maxVertexTexUnits, maxCombinedTexUnits);
     GLint numExt = 0, numBinFmt = 0;
     glGetIntegerv(GL_NUM_EXTENSIONS, &numExt);
     glGetIntegerv(GL_NUM_PROGRAM_BINARY_FORMATS, &numBinFmt);
@@ -448,8 +453,8 @@ void Renderer::Impl::init() {
         }
     }
     port_log("gl: %d program binary formats; extensions: %s", numBinFmt, exts.c_str());
-    if (vsBlocks < 4 || fsBlocks < 1) {
-        port_log("gl: this GPU lacks the vertex attributes or storage blocks the renderer needs");
+    if (fsBlocks < 1 || maxVertexTexUnits < 4) {
+        port_log("gl: this GPU lacks the fragment storage blocks or vertex texture units the renderer needs");
     }
 
     GLuint vs = compileShader(GL_VERTEX_SHADER, kCopyVs), fs = compileShader(GL_FRAGMENT_SHADER, kCopyFs);
@@ -1404,8 +1409,10 @@ void Builder::build(std::shared_ptr<const Frame> frame, Prepared& out) {
             static const GLenum zf[8] = {GL_NEVER, GL_LESS, GL_EQUAL, GL_LEQUAL, GL_GREATER, GL_NOTEQUAL, GL_GEQUAL, GL_ALWAYS};
             it.depthFunc = zf[(zm >> 1) & 7];
             u32 cull = (bp[0x00] >> 14) & 3;
-            it.cull = cull != 0;
-            it.cullFace = cull == 1 ? GL_FRONT : cull == 2 ? GL_BACK : GL_FRONT_AND_BACK;
+            it.cull = (cull != 0);
+            // GameCube GX hwMode is (((mode & 1) << 1) | ((mode & 2) >> 1)):
+            // cull == 1 is GX_CULL_BACK -> GL_BACK, cull == 2 is GX_CULL_FRONT -> GL_FRONT
+            it.cullFace = (cull == 1) ? GL_BACK : (cull == 2) ? GL_FRONT : GL_FRONT_AND_BACK;
 
             it.texMask = usedTexUnits(bp);
             static const u8 m0[8] = {0x80, 0x81, 0x82, 0x83, 0xA0, 0xA1, 0xA2, 0xA3};
@@ -1847,7 +1854,8 @@ void Renderer::Impl::execute(EfbTarget& efb, const EyeView* eye, EfbTarget* hud,
         if (transparent) {
             glClearColor(0, 0, 0, 0);
         } else {
-            glClearColor((clearAR & 255) / 255.0f, ((clearGB >> 8) & 255) / 255.0f, (clearGB & 255) / 255.0f, ((clearAR >> 8) & 255) / 255.0f);
+            // Clear color RGB from clearAR/GB, but keep alpha at 0 so screen-alpha captures don't treat entire background as opaque silhouette
+            glClearColor((clearAR & 255) / 255.0f, ((clearGB >> 8) & 255) / 255.0f, (clearGB & 255) / 255.0f, 0.0f);
         }
         glClearDepthf(clearZ / 16777215.0f);
         glStencilMask(0xFF);

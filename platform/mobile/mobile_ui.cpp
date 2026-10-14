@@ -422,18 +422,18 @@ void UIOverlay::update(PortPadState& pad, int& spinFrames) {
     // 1. Decay virtual tap pulse for full-touch controls
     if (mTapPendingFrames > 0) {
         mTapPendingFrames--;
-        pad.buttons |= 0x0800; // WPAD_BUTTON_A
+        pad.buttons |= 0x0C00; // WPAD_BUTTON_A | WPAD_BUTTON_B (allows single-tap to pass Wii 'Press A and B' prompt)
         mBtnAPressed = true;
+        mBtnBPressed = true;
     } else {
         if (!mFingerDownOnA) {
             pad.buttons &= ~0x0800;
             mBtnAPressed = false;
         }
-    }
-
-    if (!mFingerDownOnB) {
-        pad.buttons &= ~0x0400;
-        mBtnBPressed = false;
+        if (!mFingerDownOnB) {
+            pad.buttons &= ~0x0400;
+            mBtnBPressed = false;
+        }
     }
 
     if (!mFingerDownOnZ) {
@@ -1158,8 +1158,9 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
     }
 
     if (mTapPendingFrames > 0) {
-        touchButtons |= 0x0800; // WPAD_BUTTON_A
+        touchButtons |= 0x0C00; // WPAD_BUTTON_A | WPAD_BUTTON_B
         mBtnAPressed = true;
+        mBtnBPressed = true;
     }
 
     pad.buttons = touchButtons;
