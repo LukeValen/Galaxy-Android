@@ -23,7 +23,7 @@ VkRenderer& vkRenderer() {
 }
 
 bool VkRenderer::init(ANativeWindow* window) {
-    std::lock_guard<std::mutex> lock(mRenderMutex);
+    std::lock_guard<std::recursive_mutex> lock(mRenderMutex);
     if (mInitialized) return true;
     mWindow = window;
     mWidth = ANativeWindow_getWidth(window);
@@ -82,7 +82,7 @@ bool VkRenderer::init(ANativeWindow* window) {
 }
 
 void VkRenderer::shutdown() {
-    std::lock_guard<std::mutex> lock(mRenderMutex);
+    std::lock_guard<std::recursive_mutex> lock(mRenderMutex);
     if (!mInitialized) return;
 
     if (mDevice != VK_NULL_HANDLE) {
@@ -331,6 +331,47 @@ bool VkRenderer::createRenderPasses() {
         return false;
     }
 
+    // EFB offscreen render pass (Color + Depth/Stencil attachments)
+    VkAttachmentDescription efbAttachments[2]{};
+    efbAttachments[0].format = VK_FORMAT_R8G8B8A8_UNORM;
+    efbAttachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
+    efbAttachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    efbAttachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    efbAttachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    efbAttachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    efbAttachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    efbAttachments[0].finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    efbAttachments[1].format = VK_FORMAT_D24_UNORM_S8_UINT;
+    efbAttachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
+    efbAttachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    efbAttachments[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    efbAttachments[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    efbAttachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    efbAttachments[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    efbAttachments[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+    VkAttachmentReference colorRef{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+    VkAttachmentReference depthRef{1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
+
+    VkSubpassDescription efbSubpass{};
+    efbSubpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    efbSubpass.colorAttachmentCount = 1;
+    efbSubpass.pColorAttachments = &colorRef;
+    efbSubpass.pDepthStencilAttachment = &depthRef;
+
+    VkRenderPassCreateInfo efbRpInfo{};
+    efbRpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    efbRpInfo.attachmentCount = 2;
+    efbRpInfo.pAttachments = efbAttachments;
+    efbRpInfo.subpassCount = 1;
+    efbRpInfo.pSubpasses = &efbSubpass;
+
+    if (vkCreateRenderPass(mDevice, &efbRpInfo, nullptr, &mEfbRenderPass) != VK_SUCCESS) {
+        LOGE("Failed to create Vulkan EFB render pass");
+        return false;
+    }
+
     mSwapchainFramebuffers.resize(mSwapchainImageViews.size());
     for (size_t i = 0; i < mSwapchainImageViews.size(); i++) {
         VkFramebufferCreateInfo fci{};
@@ -436,12 +477,12 @@ VkTarget VkRenderer::createTarget(int w, int h) {
     t.width = w;
     t.height = h;
 
-    // Color image
+    // 1. Color attachment image (RGBA8)
     VkImageCreateInfo ici{};
     ici.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     ici.imageType = VK_IMAGE_TYPE_2D;
-    ici.extent.width = w;
-    ici.extent.height = h;
+    ici.extent.width = (uint32_t)w;
+    ici.extent.height = (uint32_t)h;
     ici.extent.depth = 1;
     ici.mipLevels = 1;
     ici.arrayLayers = 1;
@@ -452,7 +493,10 @@ VkTarget VkRenderer::createTarget(int w, int h) {
     ici.samples = VK_SAMPLE_COUNT_1_BIT;
     ici.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-    vkCreateImage(mDevice, &ici, nullptr, &t.colorImage);
+    if (vkCreateImage(mDevice, &ici, nullptr, &t.colorImage) != VK_SUCCESS) {
+        destroyTarget(t);
+        return {};
+    }
 
     VkMemoryRequirements memReqs;
     vkGetImageMemoryRequirements(mDevice, t.colorImage, &memReqs);
@@ -461,8 +505,11 @@ VkTarget VkRenderer::createTarget(int w, int h) {
     mai.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     mai.allocationSize = memReqs.size;
     mai.memoryTypeIndex = findMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    vkAllocateMemory(mDevice, &mai, nullptr, &t.colorMemory);
-    vkBindImageMemory(mDevice, t.colorImage, t.colorMemory, 0);
+    if (vkAllocateMemory(mDevice, &mai, nullptr, &t.colorMemory) != VK_SUCCESS ||
+        vkBindImageMemory(mDevice, t.colorImage, t.colorMemory, 0) != VK_SUCCESS) {
+        destroyTarget(t);
+        return {};
+    }
 
     VkImageViewCreateInfo ivci{};
     ivci.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -472,7 +519,57 @@ VkTarget VkRenderer::createTarget(int w, int h) {
     ivci.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     ivci.subresourceRange.levelCount = 1;
     ivci.subresourceRange.layerCount = 1;
-    vkCreateImageView(mDevice, &ivci, nullptr, &t.colorView);
+    if (vkCreateImageView(mDevice, &ivci, nullptr, &t.colorView) != VK_SUCCESS) {
+        destroyTarget(t);
+        return {};
+    }
+
+    // 2. Depth/stencil attachment image (D24S8)
+    VkImageCreateInfo dici = ici;
+    dici.format = VK_FORMAT_D24_UNORM_S8_UINT;
+    dici.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+
+    if (vkCreateImage(mDevice, &dici, nullptr, &t.depthImage) != VK_SUCCESS) {
+        destroyTarget(t);
+        return {};
+    }
+
+    vkGetImageMemoryRequirements(mDevice, t.depthImage, &memReqs);
+    mai.allocationSize = memReqs.size;
+    mai.memoryTypeIndex = findMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    if (vkAllocateMemory(mDevice, &mai, nullptr, &t.depthMemory) != VK_SUCCESS ||
+        vkBindImageMemory(mDevice, t.depthImage, t.depthMemory, 0) != VK_SUCCESS) {
+        destroyTarget(t);
+        return {};
+    }
+
+    VkImageViewCreateInfo divci{};
+    divci.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    divci.image = t.depthImage;
+    divci.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    divci.format = VK_FORMAT_D24_UNORM_S8_UINT;
+    divci.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+    divci.subresourceRange.levelCount = 1;
+    divci.subresourceRange.layerCount = 1;
+    if (vkCreateImageView(mDevice, &divci, nullptr, &t.depthView) != VK_SUCCESS) {
+        destroyTarget(t);
+        return {};
+    }
+
+    // 3. Target Framebuffer bound to mEfbRenderPass
+    VkImageView attachments[2] = {t.colorView, t.depthView};
+    VkFramebufferCreateInfo fci{};
+    fci.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+    fci.renderPass = mEfbRenderPass;
+    fci.attachmentCount = 2;
+    fci.pAttachments = attachments;
+    fci.width = (uint32_t)w;
+    fci.height = (uint32_t)h;
+    fci.layers = 1;
+    if (vkCreateFramebuffer(mDevice, &fci, nullptr, &t.framebuffer) != VK_SUCCESS) {
+        destroyTarget(t);
+        return {};
+    }
 
     return t;
 }
@@ -490,7 +587,7 @@ void VkRenderer::destroyTarget(VkTarget& target) {
 }
 
 void VkRenderer::onWindowResized(ANativeWindow* window) {
-    std::lock_guard<std::mutex> lock(mRenderMutex);
+    std::lock_guard<std::recursive_mutex> lock(mRenderMutex);
     if (!mInitialized) return;
     mWindow = window;
     mWidth = ANativeWindow_getWidth(window);
@@ -515,15 +612,18 @@ void VkRenderer::onWindowResized(ANativeWindow* window) {
 }
 
 void VkRenderer::present(const VkTarget& target, int vpX, int vpY, int vpW, int vpH) {
-    std::lock_guard<std::mutex> lock(mRenderMutex);
+    std::lock_guard<std::recursive_mutex> lock(mRenderMutex);
     if (!mInitialized || mSwapchain == VK_NULL_HANDLE) return;
 
     vkWaitForFences(mDevice, 1, &mFlightFence, VK_TRUE, UINT64_MAX);
 
     uint32_t imageIndex;
     VkResult acquireRes = vkAcquireNextImageKHR(mDevice, mSwapchain, UINT64_MAX, mImageAvailableSem, VK_NULL_HANDLE, &imageIndex);
-    if (acquireRes == VK_ERROR_OUT_OF_DATE_KHR) {
+    if (acquireRes == VK_ERROR_OUT_OF_DATE_KHR || acquireRes == VK_SUBOPTIMAL_KHR) {
         onWindowResized(mWindow);
+        return;
+    }
+    if (acquireRes != VK_SUCCESS) {
         return;
     }
 

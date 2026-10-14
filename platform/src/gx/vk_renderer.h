@@ -97,7 +97,7 @@ private:
     VkDescriptorSetLayout mStorageDescLayout = VK_NULL_HANDLE;
     VkDescriptorPool mDescriptorPool = VK_NULL_HANDLE;
 
-    std::mutex mRenderMutex;
+    std::recursive_mutex mRenderMutex;
 };
 
 VkRenderer& vkRenderer();

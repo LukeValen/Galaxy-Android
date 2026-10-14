@@ -755,16 +755,7 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                             else if (idx == 1) mSettings.scale = 1.00f;
                             else mSettings.scale = 1.25f;
                         }
-                        // Row 8: Target FPS Switch
-                        else if (contentRelY >= 436.0f * uiScale && contentRelY <= 492.0f * uiScale) {
-                            float segW = contentW / 3.0f;
-                            int idx = (int)((px - (drawerX + padX)) / segW);
-                            if (idx <= 0) mSettings.targetFps = 60;
-                            else if (idx == 1) mSettings.targetFps = 90;
-                            else mSettings.targetFps = 120;
-                        }
-                        // Row 9: Layout Reposition / Reset
-
+                        // Row 8: Layout Reposition / Reset
                         else if (contentRelY >= 436.0f * uiScale && contentRelY <= 492.0f * uiScale) {
                             float splitX = drawerX + padX + contentW * 0.56f;
                             if (px < splitX) {

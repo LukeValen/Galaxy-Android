@@ -33,6 +33,7 @@ struct Settings {
 
     bool fullTouchMode = true;
     int perfHudMode = 2; // 0 = Off, 1 = FPS, 2 = Full Hardware Stats
+    int graphicsBackend = 0; // 0 = OpenGL ES 3.2 (Default Active), 1 = Vulkan 1.1 (Experimental)
 
     void load(const std::string& path);
     void save(const std::string& path) const;
