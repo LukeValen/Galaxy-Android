@@ -715,13 +715,21 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
         // Boot game once window and data are available
         if (!a.gameBooted) {
             if (!a.dataRoot.empty()) {
-                // Auto-detect system language (Spanish, French, German, Italian, English, etc.)
-                char sysLocale[PROP_VALUE_MAX] = {0};
-                if (__system_property_get("persist.sys.locale", sysLocale) > 0 ||
-                    __system_property_get("ro.product.locale", sysLocale) > 0) {
-                    char langCode[3] = { (char)tolower(sysLocale[0]), (char)tolower(sysLocale[1]), 0 };
-                    port_language_set(langCode);
-                    LOGI("Auto-detected device language: %s -> set language code: %s", sysLocale, langCode);
+                // Language selection: user manual preference first, then fallback to device locale
+                int userLang = mobile_ui::UIOverlay::get().settings().languageChoice;
+                if (userLang == 1) port_language_set("en");
+                else if (userLang == 2) port_language_set("es");
+                else if (userLang == 3) port_language_set("fr");
+                else if (userLang == 4) port_language_set("de");
+                else if (userLang == 5) port_language_set("it");
+                else {
+                    char sysLocale[PROP_VALUE_MAX] = {0};
+                    if (__system_property_get("persist.sys.locale", sysLocale) > 0 ||
+                        __system_property_get("ro.product.locale", sysLocale) > 0) {
+                        char langCode[3] = { (char)tolower(sysLocale[0]), (char)tolower(sysLocale[1]), 0 };
+                        port_language_set(langCode);
+                        LOGI("Auto-detected device language: %s -> set language code: %s", sysLocale, langCode);
+                    }
                 }
 
                 LOGI("Booting game from: %s", a.dataRoot.c_str());
