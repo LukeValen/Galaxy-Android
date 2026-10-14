@@ -15,6 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/system_properties.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -470,40 +471,52 @@ int32_t onInput(android_app* app, AInputEvent* event) {
 
         switch (keyCode) {
         case AKEYCODE_BUTTON_A:
+        case AKEYCODE_BUTTON_1:
         case AKEYCODE_DPAD_CENTER:
             a->pad.connected = 1;
             if (down) a->pad.buttons |= 0x0800;  // A
             else a->pad.buttons &= ~0x0800;
             break;
         case AKEYCODE_BUTTON_B:
+        case AKEYCODE_BUTTON_2:
             a->pad.connected = 1;
             if (down) a->pad.buttons |= 0x0400;  // B
             else a->pad.buttons &= ~0x0400;
             break;
         case AKEYCODE_BUTTON_X:
+        case AKEYCODE_BUTTON_3:
             a->pad.connected = 1;
             if (down) a->spinFrames = 6;  // Spin (Wiimote shake)
             break;
         case AKEYCODE_BUTTON_Y:
+        case AKEYCODE_BUTTON_4:
             a->pad.connected = 1;
             if (down) a->pad.buttons |= 0x1000;  // C
             else a->pad.buttons &= ~0x1000;
             break;
         case AKEYCODE_BUTTON_L1:
+        case AKEYCODE_BUTTON_5:
         case AKEYCODE_BUTTON_L2:
+        case AKEYCODE_BUTTON_7:
         case AKEYCODE_BUTTON_THUMBL:
+        case AKEYCODE_BUTTON_11:
             a->pad.connected = 1;
             if (down) a->pad.buttons |= 0x2000;  // Z (crouch / ground pound)
             else a->pad.buttons &= ~0x2000;
             break;
         case AKEYCODE_BUTTON_R1:
+        case AKEYCODE_BUTTON_6:
         case AKEYCODE_BUTTON_R2:
+        case AKEYCODE_BUTTON_8:
         case AKEYCODE_BUTTON_THUMBR:
+        case AKEYCODE_BUTTON_12:
             a->pad.connected = 1;
             if (down) a->spinFrames = 6;  // Spin (Wiimote shake)
             break;
         case AKEYCODE_BUTTON_START:
+        case AKEYCODE_BUTTON_10:
         case AKEYCODE_BUTTON_SELECT:
+        case AKEYCODE_BUTTON_9:
         case AKEYCODE_BUTTON_MODE:
         case AKEYCODE_MENU:
             a->pad.connected = 1;
@@ -679,6 +692,15 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
         // Boot game once window and data are available
         if (!a.gameBooted) {
             if (!a.dataRoot.empty()) {
+                // Auto-detect system language (Spanish, French, German, Italian, English, etc.)
+                char sysLocale[PROP_VALUE_MAX] = {0};
+                if (__system_property_get("persist.sys.locale", sysLocale) > 0 ||
+                    __system_property_get("ro.product.locale", sysLocale) > 0) {
+                    char langCode[3] = { (char)tolower(sysLocale[0]), (char)tolower(sysLocale[1]), 0 };
+                    port_language_set(langCode);
+                    LOGI("Auto-detected device language: %s -> set language code: %s", sysLocale, langCode);
+                }
+
                 LOGI("Booting game from: %s", a.dataRoot.c_str());
                 a.gameBooted = true;
                 port_boot(a.dataRoot.c_str(), a.saveRoot.c_str());

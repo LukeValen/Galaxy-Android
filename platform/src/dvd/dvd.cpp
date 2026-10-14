@@ -181,10 +181,25 @@ extern "C" void port_language_set(const char* name) {
 }
 
 extern "C" int port_language_wanted(void) {
+    if (sLanguageWanted[0] == 0) {
+        return 0;
+    }
     for (int i = 0; i < sLanguageCount; i++) {
         if (strcmp(sLanguageWanted, sLanguages[i]->name) == 0) {
             return i;
         }
+    }
+    // Also match 2-letter ISO codes and prefixes
+    for (int i = 0; i < sLanguageCount; i++) {
+        const char* lang = sLanguages[i]->name;
+        if (strncmp(sLanguageWanted, lang, strlen(sLanguageWanted)) == 0) return i;
+        if ((strcmp(sLanguageWanted, "es") == 0 || strcmp(sLanguageWanted, "spa") == 0) && strcmp(lang, "spanish") == 0) return i;
+        if ((strcmp(sLanguageWanted, "fr") == 0 || strcmp(sLanguageWanted, "fra") == 0) && strcmp(lang, "french") == 0) return i;
+        if ((strcmp(sLanguageWanted, "de") == 0 || strcmp(lang, "ger") == 0) && strcmp(lang, "german") == 0) return i;
+        if ((strcmp(sLanguageWanted, "it") == 0 || strcmp(sLanguageWanted, "ita") == 0) && strcmp(lang, "italian") == 0) return i;
+        if ((strcmp(sLanguageWanted, "en") == 0 || strcmp(sLanguageWanted, "eng") == 0) && strcmp(lang, "english") == 0) return i;
+        if ((strcmp(sLanguageWanted, "ja") == 0 || strcmp(sLanguageWanted, "jpn") == 0) && strcmp(lang, "japanese") == 0) return i;
+        if ((strcmp(sLanguageWanted, "ko") == 0 || strcmp(sLanguageWanted, "kor") == 0) && strcmp(lang, "korean") == 0) return i;
     }
     return 0;
 }
