@@ -15,6 +15,7 @@ void port_log(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
 void port_fatal(const char* fmt, ...) __attribute__((format(printf, 1, 2), noreturn));
 // Also write the log to this file, keeping the previous one as <path>.prev.
 void port_log_file(const char* path);
+int port_get_recent_logs(char* out, int maxBytes);
 #define PORT_LOG(...) port_log(__VA_ARGS__)
 
 // ---------------------------------------------------------------------------

@@ -6,7 +6,9 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <deque>
 #include <mutex>
+#include <string>
 #include <thread>
 
 #include "port/port.h"
@@ -298,15 +300,59 @@ extern "C" void port_log_file(const char* path) {
     }
 }
 
-static void logToFile(const char* fmt, va_list args) {
-    std::lock_guard<std::mutex> lock(sLogFileLock);
-    if (!sLogFile || sLogFileBytes > kLogFileMax) {
-        return;
+static std::mutex sLogRingLock;
+static constexpr int kMaxLogRing = 100;
+static constexpr int kMaxLogLineLen = 256;
+static char sLogRing[kMaxLogRing][kMaxLogLineLen];
+static int sLogRingStart = 0;
+static int sLogRingCount = 0;
+
+extern "C" int port_get_recent_logs(char* out, int maxBytes) {
+    if (!out || maxBytes <= 0) return 0;
+    std::lock_guard<std::mutex> lock(sLogRingLock);
+    out[0] = '\0';
+    int written = 0;
+    for (int i = 0; i < sLogRingCount; i++) {
+        int idx = (sLogRingStart + i) % kMaxLogRing;
+        int len = (int)strlen(sLogRing[idx]);
+        if (written + len + 2 >= maxBytes) break;
+        memcpy(out + written, sLogRing[idx], len);
+        written += len;
+        out[written++] = '\n';
+        out[written] = '\0';
     }
+    return written;
+}
+
+static void logToFile(const char* fmt, va_list args) {
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
     struct tm tm;
     localtime_r(&ts.tv_sec, &tm);
+
+    char lineBuf[256];
+    va_list ringCopy;
+    va_copy(ringCopy, args);
+    vsnprintf(lineBuf, sizeof(lineBuf), fmt, ringCopy);
+    va_end(ringCopy);
+
+    {
+        std::lock_guard<std::mutex> lock(sLogRingLock);
+        int slot = (sLogRingStart + sLogRingCount) % kMaxLogRing;
+        if (sLogRingCount >= kMaxLogRing) {
+            slot = sLogRingStart;
+            sLogRingStart = (sLogRingStart + 1) % kMaxLogRing;
+        } else {
+            sLogRingCount++;
+        }
+        snprintf(sLogRing[slot], kMaxLogLineLen, "%02d:%02d:%02d.%03d %s",
+                 tm.tm_hour, tm.tm_min, tm.tm_sec, (int)(ts.tv_nsec / 1000000), lineBuf);
+    }
+
+    std::lock_guard<std::mutex> lock(sLogFileLock);
+    if (!sLogFile || sLogFileBytes > kLogFileMax) {
+        return;
+    }
     int n = fprintf(sLogFile, "%02d:%02d:%02d.%03d ", tm.tm_hour, tm.tm_min, tm.tm_sec, (int)(ts.tv_nsec / 1000000));
     n += vfprintf(sLogFile, fmt, args);
     fputc('\n', sLogFile);

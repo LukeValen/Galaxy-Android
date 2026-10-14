@@ -31,3 +31,8 @@ out-mobile/
 *.apk
 tools/*.jar
 
+# Debug artifacts & captures
+*.txt
+compile_commands.json
+live_*.png
+phone_*.png

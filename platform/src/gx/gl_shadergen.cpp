@@ -1,12 +1,12 @@
-// GLSL ES 3.2 generation for the GX pipeline.
-#include "gl_shadergen.h"
-
-#include <stdarg.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include <cstdarg>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <string>
 
 #include "gpu.h"
 #include "gx_record.h"
+#include "gl_shadergen.h"
 
 namespace gpu {
 
@@ -24,9 +24,35 @@ struct Out {
     }
 };
 
-const char* kUniformBlocks = R"(
-layout(std430, binding = 0) buffer RowBuf { vec4 rows[]; };
-layout(std430, binding = 1) buffer RecBuf { uint recs[]; };
+const char* kUniformBlocksVs = R"(
+precision highp samplerBuffer;
+precision highp usamplerBuffer;
+layout(binding = 8) uniform highp samplerBuffer s_rows;
+layout(binding = 9) uniform highp usamplerBuffer s_recs;
+layout(binding = 10) uniform highp samplerBuffer s_st;
+layout(binding = 11) uniform highp usamplerBuffer s_vtxRec;
+layout(std140, binding = 2) uniform EyeBlock {
+    vec4 vrView[4];
+    vec4 vrProj[4];
+    ivec4 vrFlags;
+    vec4 vrFocus;
+    vec4 vrCut;
+    vec4 vrEyePos;
+    vec4 vrStereo;
+    vec4 vrStereo2;
+};
+
+#define fetch_rows(r) texelFetch(s_rows, int(r))
+#define fetch_recs(idx) texelFetch(s_recs, int(idx)).r
+#define fetch_st(idx) texelFetch(s_st, int(idx))
+#define fetch_vtxRec(idx) texelFetch(s_vtxRec, int(idx)).r
+
+#define slotRow(rb, firstSlot, idx) (fetch_recs((rb) + (firstSlot) + uint((idx) / 3)) + uint((idx) % 3))
+#define mulRows(r, v) vec3(dot(fetch_rows(r), v), dot(fetch_rows((r) + 1u), v), dot(fetch_rows((r) + 2u), v))
+#define L(i) fetch_st(lbase + uint(i))
+)";
+
+const char* kUniformBlocksFs = R"(
 layout(std430, binding = 2) buffer StateBuf { vec4 st[]; };
 layout(std140, binding = 2) uniform EyeBlock {
     vec4 vrView[4];
@@ -93,7 +119,7 @@ ShaderUid makeShaderUid(const uint32_t* bp, const uint32_t* xf, uint32_t vtxFlag
 std::string genVertexShader(const ShaderUid& u) {
     Out o;
     o.w("#version 320 es\nprecision highp float;\nprecision highp int;\n");
-    o.s += kUniformBlocks;
+    o.s += kUniformBlocksVs;
     uint32_t f = u.vtxFlags;
     o.w("layout(location = 0) in vec3 a_pos;\n");
     if (f & VF_POSMTX) o.w("layout(location = 1) in uint a_posmtx;\n");
@@ -105,9 +131,6 @@ std::string genVertexShader(const ShaderUid& u) {
         if (f & (VF_TEX0 << i)) o.w("layout(location = %d) in vec2 a_tex%d;\n", 7 + i, i);
     }
     if (f & VF_TEXMTX) o.w("layout(location = 15) in uvec2 a_texmtx;\n");
-    // Draw record of this vertex: indices are relative to the batch's first
-    // vertex, so gl_VertexID + the batch's first ordinal indexes vtxRec[].
-    o.w("layout(std430, binding = 3) buffer VtxRecBuf { uint vtxRec[]; };\n");
     o.w("uniform uint u_firstOrdinal;\n");
     o.w("flat out uint v_pix;\n");
     o.w("out vec4 v_clr0;\nout vec4 v_clr1;\n");
@@ -115,17 +138,13 @@ std::string genVertexShader(const ShaderUid& u) {
     o.w("out float v_viewz;\nout float v_gxz;\n");
     if (u.cutaway) o.w("out vec3 v_eye;\n");
 
-    // Matrix rows: slot bases come from the draw record (3 rows per slot).
-    o.w("#define slotRow(rb, firstSlot, idx) (recs[(rb) + (firstSlot) + uint((idx) / 3)] + uint((idx) %% 3))\n");
-    o.w("#define mulRows(r, v) vec3(dot(rows[r], v), dot(rows[(r) + 1u], v), dot(rows[(r) + 2u], v))\n");
-    o.w("#define L(i) st[lbase + uint(i)]\n");
     o.w("void main() {\n");
-    o.w("  uint rb = vtxRec[u_firstOrdinal + uint(gl_VertexID)] * %uu;\n", (unsigned)kRecWords);
-    o.w("  uint lbase = recs[rb + %uu];\n  uint pjbase = recs[rb + %uu];\n", (unsigned)kRecLights, (unsigned)kRecProj);
-    o.w("  v_pix = recs[rb + %uu];\n", (unsigned)kRecPixel);
-    o.w("  uint mA = recs[rb + %uu];\n  uint mB = recs[rb + %uu];\n", (unsigned)kRecMtxIdxA, (unsigned)kRecMtxIdxB);
-    o.w("  vec4 proj[4] = vec4[4](st[pjbase], st[pjbase + 1u], st[pjbase + 2u], st[pjbase + 3u]);\n");
-    o.w("  vec4 depthParams = st[pjbase + 4u];\n");
+    o.w("  uint rb = fetch_vtxRec(u_firstOrdinal + uint(gl_VertexID)) * %uu;\n", (unsigned)kRecWords);
+    o.w("  uint lbase = fetch_recs(rb + %uu);\n  uint pjbase = fetch_recs(rb + %uu);\n", (unsigned)kRecLights, (unsigned)kRecProj);
+    o.w("  v_pix = fetch_recs(rb + %uu);\n", (unsigned)kRecPixel);
+    o.w("  uint mA = fetch_recs(rb + %uu);\n  uint mB = fetch_recs(rb + %uu);\n", (unsigned)kRecMtxIdxA, (unsigned)kRecMtxIdxB);
+    o.w("  vec4 proj[4] = vec4[4](fetch_st(pjbase), fetch_st(pjbase + 1u), fetch_st(pjbase + 2u), fetch_st(pjbase + 3u));\n");
+    o.w("  vec4 depthParams = fetch_st(pjbase + 4u);\n");
     o.w("  vec4 matColor[2] = vec4[2](L(40), L(41));\n  vec4 ambColor[2] = vec4[2](L(42), L(43));\n");
     if (f & VF_POSMTX) {
         o.w("  int pidx = int(a_posmtx);\n");
@@ -138,12 +157,12 @@ std::string genVertexShader(const ShaderUid& u) {
     o.w("  uint nr = slotRow(rb, %uu, nidx);\n", (unsigned)kRecNrmSlots);
     o.w("  vec3 nrm = vec3(0.0, 0.0, 1.0);\n  vec3 bin = vec3(0.0);\n  vec3 tan = vec3(0.0);\n");
     if (f & VF_NRM) {
-        o.w("  nrm = vec3(dot(rows[nr].xyz, a_nrm), dot(rows[nr + 1u].xyz, a_nrm), dot(rows[nr + 2u].xyz, a_nrm));\n");
+        o.w("  nrm = vec3(dot(fetch_rows(nr).xyz, a_nrm), dot(fetch_rows(nr + 1u).xyz, a_nrm), dot(fetch_rows(nr + 2u).xyz, a_nrm));\n");
         o.w("  if (dot(nrm, nrm) > 0.0) nrm = normalize(nrm);\n");
     }
     if (f & VF_NBT) {
-        o.w("  bin = vec3(dot(rows[nr].xyz, a_bin), dot(rows[nr + 1u].xyz, a_bin), dot(rows[nr + 2u].xyz, a_bin));\n");
-        o.w("  tan = vec3(dot(rows[nr].xyz, a_tan), dot(rows[nr + 1u].xyz, a_tan), dot(rows[nr + 2u].xyz, a_tan));\n");
+        o.w("  bin = vec3(dot(fetch_rows(nr).xyz, a_bin), dot(fetch_rows(nr + 1u).xyz, a_bin), dot(fetch_rows(nr + 2u).xyz, a_bin));\n");
+        o.w("  tan = vec3(dot(fetch_rows(nr).xyz, a_tan), dot(fetch_rows(nr + 1u).xyz, a_tan), dot(fetch_rows(nr + 2u).xyz, a_tan));\n");
     }
 
     // Projection (GX clip space: z/w in [-1, 0]) with GX depth mapping, or
@@ -154,10 +173,10 @@ std::string genVertexShader(const ShaderUid& u) {
     o.w("  vec4 c = vec4(dot(proj[0], v4), dot(proj[1], v4), dot(proj[2], v4), dot(proj[3], v4));\n");
     o.w("  float depth = (c.z * depthParams.x + c.w * depthParams.y) * (1.0 / 16777215.0);\n");
     o.w("  v_gxz = c.w != 0.0 ? depth / c.w : depth;\n");
-    o.w("  bool vrDraw = (recs[rb + %uu] & 1u) != 0u && vrFlags.x == 1;\n", (unsigned)kRecFlags);
-    o.w("  bool stereoDraw = (recs[rb + %uu] & 1u) != 0u && vrFlags.x == 2;\n", (unsigned)kRecFlags);
+    o.w("  bool vrDraw = (fetch_recs(rb + %uu) & 1u) != 0u && vrFlags.x == 1;\n", (unsigned)kRecFlags);
+    o.w("  bool stereoDraw = (fetch_recs(rb + %uu) & 1u) != 0u && vrFlags.x == 2;\n", (unsigned)kRecFlags);
     o.w("  vec4 clipPos;\n");
-    o.w("  if (vrDraw && (recs[rb + %uu] & 2u) != 0u) {\n", (unsigned)kRecFlags);
+    o.w("  if (vrDraw && (fetch_recs(rb + %uu) & 2u) != 0u) {\n", (unsigned)kRecFlags);
     // A sky is modelled around the game camera, which is metres away from
     // the eye in the diorama: draw it around the eye, at the far plane.
     o.w("    vec4 e = vec4(dot(vrView[0].xyz, pos), dot(vrView[1].xyz, pos), dot(vrView[2].xyz, pos), 0.0);\n");
@@ -174,7 +193,7 @@ std::string genVertexShader(const ShaderUid& u) {
     // lands where it does without (the screen's own depth).  Nearer things
     // shift the other way, at most vrStereo.z times as far as the farthest
     // ones; a sky belongs with the farthest.
-    o.w("    if (stereoDraw) c.x += vrStereo.x * min(((recs[rb + %uu] & 2u) != 0u ? 0.0 : vrStereo.y) - c.w, vrStereo.z * c.w);\n",
+    o.w("    if (stereoDraw) c.x += vrStereo.x * min(((fetch_recs(rb + %uu) & 2u) != 0u ? 0.0 : vrStereo.y) - c.w, vrStereo.z * c.w);\n",
         (unsigned)kRecFlags);
     if (u.hud) {
         // The HUD of a stereo pair: shifted as a whole (it floats before
@@ -183,7 +202,7 @@ std::string genVertexShader(const ShaderUid& u) {
         // The pointer's cursor on the scene goes where what it points at is
         // drawn instead (on menus it stays with the HUD).
         o.w("    if (vrFlags.x == 2) {\n");
-        o.w("      if ((recs[rb + %uu] & 4u) != 0u && vrStereo2.y == 0.0) c.x += vrStereo2.x * c.w;\n", (unsigned)kRecFlags);
+        o.w("      if ((fetch_recs(rb + %uu) & 4u) != 0u && vrStereo2.y == 0.0) c.x += vrStereo2.x * c.w;\n", (unsigned)kRecFlags);
         o.w("      else c.x = c.x * (1.0 + abs(vrStereo.w)) + vrStereo.w * c.w;\n");
         o.w("    }\n");
     }
@@ -311,7 +330,7 @@ std::string genVertexShader(const ShaderUid& u) {
         if (stq) {
             o.w("    vec3 t = mulRows(tr, src);\n");
         } else {
-            o.w("    vec3 t = vec3(dot(rows[tr], src), dot(rows[tr + 1u], src), 1.0);\n");
+            o.w("    vec3 t = vec3(dot(fetch_rows(tr), src), dot(fetch_rows(tr + 1u), src), 1.0);\n");
         }
         if (u.dualTex) {
             uint32_t post = u.postMtxInfo[i];
@@ -319,7 +338,7 @@ std::string genVertexShader(const ShaderUid& u) {
                 o.w("    t = normalize(t);\n");
             }
             o.w("    vec4 t4 = vec4(t, 1.0);\n");
-            o.w("    t = mulRows(recs[rb + %uu], t4);\n", (unsigned)kRecPost + i);
+            o.w("    t = mulRows(fetch_recs(rb + %uu), t4);\n", (unsigned)kRecPost + i);
         }
         if ((u.screenTexGens >> i) & 1) {
             // A capture of the screen sampled where the vertex lands on it.
@@ -432,10 +451,10 @@ const char* alphaTest(uint32_t func, const char* ref) {
 
 std::string genFragmentShader(const ShaderUid& u) {
     Out o;
-    o.w("#version 320 es\nprecision highp float;\nprecision highp int;\n");
-    o.s += kUniformBlocks;
+    o.w("#version 320 es\nprecision highp float;\nprecision highp int;\nprecision highp sampler2D;\n");
+    o.s += kUniformBlocksFs;
     for (int i = 0; i < 8; i++) {
-        o.w("layout(binding = %d) uniform sampler2D s_tex%d;\n", i, i);
+        o.w("layout(binding = %d) uniform highp sampler2D s_tex%d;\n", i, i);
     }
     o.w("flat in uint v_pix;\n");
     o.w("in vec4 v_clr0;\nin vec4 v_clr1;\n");

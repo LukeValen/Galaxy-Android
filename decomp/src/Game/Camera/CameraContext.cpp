@@ -43,7 +43,7 @@ const TPos3f& CameraContext::getInvViewMtx() const {
 }
 
 f32 CameraContext::getAspect() const {
-#ifdef TARGET_PC
+#if defined(TARGET_PC) || defined(TARGET_MOBILE)
     if (port_is_fullscreen_aspect()) {
         float a = port_get_display_aspect();
         if (a > 0.1f) return a;

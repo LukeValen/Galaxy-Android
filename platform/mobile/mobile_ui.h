@@ -9,7 +9,7 @@ namespace mobile_ui {
 
 struct Settings {
     bool showControls = true;
-    bool fullscreen = false;
+    bool fullscreen = true;
     float opacity = 0.65f;
     float scale = 1.0f;
     bool dynamicStick = true;
@@ -27,6 +27,9 @@ struct Settings {
     bool modSkipCutscenes = false;
     bool modInfiniteHealth = false;
 
+    bool fullTouchMode = true;
+    int perfHudMode = 2; // 0 = Off, 1 = FPS, 2 = Full Hardware Stats
+
     void load(const std::string& path);
     void save(const std::string& path) const;
 };
@@ -38,12 +41,15 @@ public:
     bool init();
     void setSavePath(const std::string& path);
 
+    // Per-frame tick to handle pulse buttons, auto-release, and hardware metrics
+    void update(PortPadState& pad, int& spinFrames);
+
     // Processes an Android motion or key event.
     // Returns true if consumed (e.g., settings menu or virtual controls).
     bool handleInput(const AInputEvent* event, PortPadState& pad, int& spinFrames,
                      int screenW, int screenH, int vpX, int vpY, int vpW, int vpH);
 
-    // Render the overlay (touch controls + settings menu)
+    // Render the overlay (touch controls + settings menu + hardware perf HUD)
     void render(int screenW, int screenH);
 
     bool needsRedraw();
@@ -105,6 +111,33 @@ private:
     // Persistent in-game Star Pointer state (normalized -1..1, default to screen center 0, 0)
     float mPointerX = 0.0f;
     float mPointerY = 0.0f;
+
+    // Finger active press tracking (prevents stuck buttons)
+    bool mFingerDownOnA = false;
+    bool mFingerDownOnB = false;
+    bool mFingerDownOnZ = false;
+    bool mFingerDownOnSpin = false;
+
+    // Full Touch Gesture & Tap State
+    int mTapPendingFrames = 0;
+    int mRightPointerId = -1;
+    int64_t mRightTouchStartTime = 0;
+    float mRightTouchStartX = 0.0f, mRightTouchStartY = 0.0f;
+    int64_t mLastRightTapTime = 0;
+
+    // Hardware & Performance Monitoring Metrics
+    float mCurrentFps = 60.0f;
+    float mAvgFrameTimeMs = 16.6f;
+    int mFpsFrameCounter = 0;
+    int64_t mFpsLastTimeNs = 0;
+    float mCpuUsagePercent = 0.0f;
+    float mRamUsageMB = 0.0f;
+    int64_t mLastHwSampleTime = 0;
+    std::string mGpuRendererName = "Mali-G68 GPU";
+
+    // In-Game Log Viewer State
+    bool mLogViewerOpen = false;
+    float mLogScrollY = 0.0f;
 
     // GL resources
     unsigned int mProg = 0;

@@ -314,12 +314,14 @@ struct Renderer::Impl {
     GLuint eyeUbos[8] = {};
     int eyeUboNext = 0;
     GLuint rowBuf = 0, recBuf = 0, stateBuf = 0;
+    GLuint rowTex = 0, recTex = 0, stateTex = 0, vtxRecTex = 0;
     // Each frame's data goes into the next of three buffer sets, which the
     // GPU finished drawing from frames ago: refilling buffers still in use
     // made the driver wait for the GPU (up to 15 ms per frame at 120 Hz).
     struct FrameBuffers {
         GLuint buf[6] = {};    // vbo, recVbo, ibo, rowBuf, recBuf, stateBuf
         size_t cap[6] = {};    // bytes allocated
+        GLuint tex[4] = {};    // rowTex, recTex, stateTex, vtxRecTex
     };
     FrameBuffers frameBufs[3];
     int frameBufNext = 0;
@@ -420,6 +422,7 @@ void main() {
 void Renderer::Impl::init() {
     for (FrameBuffers& fb : frameBufs) {
         glGenBuffers(6, fb.buf);
+        glGenTextures(4, fb.tex);
     }
     glGenBuffers(8, eyeUbos);
     for (GLuint b : eyeUbos) {
@@ -1285,8 +1288,12 @@ void Builder::build(std::shared_ptr<const Frame> frame, Prepared& out) {
             items.push_back(it);
             // The XFB copy's source rectangle tells us the native EFB size.
             if ((it.copy[9] >> 14) & 1) {
-                nativeW = (it.copy[2] & 0x3FF) + 1;
-                nativeH = ((it.copy[2] >> 10) & 0x3FF) + 1;
+                u32 w = (it.copy[2] & 0x3FF) + 1;
+                u32 h = ((it.copy[2] >> 10) & 0x3FF) + 1;
+                if (w >= 600 && h >= 400) {
+                    nativeW = w;
+                    nativeH = h;
+                }
             }
             break;
         }
@@ -1470,6 +1477,8 @@ void Builder::build(std::shared_ptr<const Frame> frame, Prepared& out) {
     if (const char* every = debugEnv("PETARI_GLITEMS")) {
         int n = atoi(every) > 0 ? atoi(every) : 1;
         if (out.number % (u64)n == 0) logItems(out);
+    } else if (out.number % 300 == 1) {
+        logItems(out);
     }
 }
 
@@ -1495,12 +1504,27 @@ void Renderer::Impl::upload(Prepared& p, bool syncPrograms) {
     put(3, GL_SHADER_STORAGE_BUFFER, p.rows.data(), p.rows.size() * 4);
     put(4, GL_SHADER_STORAGE_BUFFER, p.recs.data(), p.recs.size() * 4);
     put(5, GL_SHADER_STORAGE_BUFFER, p.states.data(), p.states.size() * 4);
+
+    glBindTexture(GL_TEXTURE_BUFFER, fb.tex[0]);
+    glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32F, fb.buf[3]);
+    glBindTexture(GL_TEXTURE_BUFFER, fb.tex[1]);
+    glTexBuffer(GL_TEXTURE_BUFFER, GL_R32UI, fb.buf[4]);
+    glBindTexture(GL_TEXTURE_BUFFER, fb.tex[2]);
+    glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32F, fb.buf[5]);
+    glBindTexture(GL_TEXTURE_BUFFER, fb.tex[3]);
+    glTexBuffer(GL_TEXTURE_BUFFER, GL_R32UI, fb.buf[1]);
+    glBindTexture(GL_TEXTURE_BUFFER, 0);
+
     vbo = fb.buf[0];
     recVbo = fb.buf[1];
     ibo = fb.buf[2];
     rowBuf = fb.buf[3];
     recBuf = fb.buf[4];
     stateBuf = fb.buf[5];
+    rowTex = fb.tex[0];
+    recTex = fb.tex[1];
+    stateTex = fb.tex[2];
+    vtxRecTex = fb.tex[3];
 
     // New textures.
     for (auto& img : f.textures) {
@@ -1727,7 +1751,7 @@ void Renderer::Impl::doCopy(const Item& it, EfbTarget& src, Renderer& r, bool vr
         }
     }
 
-    if (clear) {
+    if (clear && !toXfb) {
         glBindFramebuffer(GL_FRAMEBUFFER, src.fbo);
         glEnable(GL_SCISSOR_TEST);
         glScissor(sx0, sy0, sx1 - sx0, sy1 - sy0);
@@ -1971,8 +1995,54 @@ void Renderer::Impl::execute(EfbTarget& efb, const EyeView* eye, EfbTarget* hud,
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, stateBuf);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, recVbo);
 
+    glActiveTexture(GL_TEXTURE8);
+    glBindTexture(GL_TEXTURE_BUFFER, rowTex);
+    glBindSampler(8, 0);
+
+    glActiveTexture(GL_TEXTURE9);
+    glBindTexture(GL_TEXTURE_BUFFER, recTex);
+    glBindSampler(9, 0);
+
+    glActiveTexture(GL_TEXTURE10);
+    glBindTexture(GL_TEXTURE_BUFFER, stateTex);
+    glBindSampler(10, 0);
+
+    glActiveTexture(GL_TEXTURE11);
+    glBindTexture(GL_TEXTURE_BUFFER, vtxRecTex);
+    glBindSampler(11, 0);
+
+    glActiveTexture(GL_TEXTURE0);
+
     int stopAfter = gDebugStopAfterDraws;
+    static u64 sLastLoggedFrame = 0;
+    bool shouldLog = (this->cur->number % 300 == 1 && this->cur->number != sLastLoggedFrame);
+    if (shouldLog) {
+        sLastLoggedFrame = this->cur->number;
+        port_log("execute: frame %llu, items %zu, vrEye=%d, native %ux%u", (unsigned long long)this->cur->number, items.size(), vrEye ? 1 : 0, nativeW, nativeH);
+    }
+    int drawCount = 0;
     for (const Item& it : items) {
+        if (shouldLog) {
+            if (it.type == IT_DRAW) {
+                drawCount++;
+                if (drawCount <= 20 || !it.hud) {
+                    port_log("  draw #%d: prim=%x idxCount=%u useVr=%d hud=%d hudSafe=%d prog=%u vp=[%.0f,%.0f,%.0f,%.0f] sc=[%d,%d,%d,%d] zTest=%d zWrite=%d zFunc=%x cull=%d",
+                             drawCount, it.prim, it.idxCount, it.useVr, it.hud, it.hudSafe, it.program,
+                             it.vp[0], it.vp[1], it.vp[2], it.vp[3],
+                             it.sc[0], it.sc[1], it.sc[2], it.sc[3],
+                             it.depthTest, it.depthWrite, it.depthFunc, it.cull);
+                }
+            } else if (it.type == IT_COPY) {
+                const u32* cp = it.copy;
+                port_log("  copy: toXfb=%d clear=%d rect=[%u,%u %ux%u] cmode=0x%x zmode=0x%x",
+                         (cp[9] >> 14) & 1, (cp[9] >> 11) & 1,
+                         cp[1] & 0x3FF, (cp[1] >> 10) & 0x3FF,
+                         (cp[2] & 0x3FF) + 1, ((cp[2] >> 10) & 0x3FF) + 1,
+                         it.copyCmode, it.copyZmode);
+            } else if (it.type == IT_MARKER) {
+                port_log("  marker: %u", it.marker);
+            }
+        }
         if (stopAfter >= 0 && it.type == IT_DRAW) {
             if (stopAfter < (int)it.draws) {
                 break;
@@ -2018,7 +2088,11 @@ void Renderer::Impl::execute(EfbTarget& efb, const EyeView* eye, EfbTarget* hud,
             gs.forget();
             continue;
         }
-        if (!it.program || !it.idxCount) {
+        GLuint prog = it.program;
+        if (!prog && it.uid < this->cur->uids.size()) {
+            prog = program(this->cur->uids[it.uid], true);
+        }
+        if (!prog || !it.idxCount) {
             continue;
         }
         EfbTarget& t = *cur;
@@ -2089,7 +2163,6 @@ void Renderer::Impl::execute(EfbTarget& efb, const EyeView* eye, EfbTarget* hud,
             setStencil(!toHudTarget && it.depthTest && it.depthWrite, it.player ? 1 : 0);
         }
 
-        GLuint prog = it.program;
         if (cutActive && it.useVr && it.uid < cutProgs.size() && cutProgs[it.uid]) {
             prog = cutProgs[it.uid];
         }

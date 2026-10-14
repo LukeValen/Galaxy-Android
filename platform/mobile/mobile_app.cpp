@@ -564,7 +564,14 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
     mkdir(a.saveRoot.c_str(), 0770);
     mobile_ui::get().setSavePath(a.saveRoot + (isPlus ? "/touch_settings_plus.ini" : "/touch_settings.ini"));
 
-    port_log_file((ext + "/petari_mobile_log.txt").c_str());
+    std::string primaryLog = "/sdcard/GalaxyData/galaxy_log.txt";
+    FILE* tst = fopen(primaryLog.c_str(), "a");
+    if (tst) {
+        fclose(tst);
+        port_log_file(primaryLog.c_str());
+    } else {
+        port_log_file((ext + "/galaxy_log.txt").c_str());
+    }
     gpu::setShaderCachePath((std::string(app->activity->internalDataPath) + "/shaders.bin").c_str());
 
     // Search for game data files
@@ -611,6 +618,9 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
                 }
             }
         }
+
+        // Update virtual pad pulse timers, auto-release, and hardware stats
+        mobile_ui::get().update(a.pad, a.spinFrames);
 
         // Handle spin shake decay and feed input state
         if (a.spinFrames > 0) {
