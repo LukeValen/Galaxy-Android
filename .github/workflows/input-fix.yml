@@ -1,5 +1,8 @@
 name: Build input fix
-on: [workflow_dispatch]
+on:
+  workflow_dispatch:
+  push:
+    branches: [fix/android-input-crash]
 permissions:
   contents: read
 jobs:
