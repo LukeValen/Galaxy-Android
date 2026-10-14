@@ -1,6 +1,7 @@
 package com.openport.galaxyandroid;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
@@ -34,6 +35,7 @@ public class MainActivity extends Activity {
     private Button btnAutoDetect;
     private Button btnStartCooking;
     private Button btnLaunchGame;
+    private Button btnResetData;
     private ProgressBar progressBar;
     private TextView txtProgressStatus;
     private TextView txtLogOutput;
@@ -47,22 +49,16 @@ public class MainActivity extends Activity {
     public static boolean isGameDataReady() {
         File dataDir = new File("/sdcard/GalaxyData");
         if (!dataDir.exists()) return false;
+        File sentinel = new File(dataDir, ".installed_ok");
         File fst = new File(dataDir, "sys/fst.bin");
         File files = new File(dataDir, "files");
         File coin = new File(dataDir, "files/ObjectData/Coin.arc");
-        return fst.exists() && fst.isFile() && files.exists() && files.isDirectory() && coin.exists();
+        return sentinel.exists() && fst.exists() && fst.isFile() && files.exists() && files.isDirectory() && coin.exists();
     }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-
-        boolean forceSetup = getIntent().getBooleanExtra("force_setup", false);
-        // Instant direct launch if game is already installed
-        if (!forceSetup && isGameDataReady()) {
-            launchGameDirectly();
-            return;
-        }
 
         setContentView(R.layout.activity_main);
 
@@ -73,6 +69,7 @@ public class MainActivity extends Activity {
         btnAutoDetect = findViewById(R.id.btnAutoDetect);
         btnStartCooking = findViewById(R.id.btnStartCooking);
         btnLaunchGame = findViewById(R.id.btnLaunchGame);
+        btnResetData = findViewById(R.id.btnResetData);
         progressBar = findViewById(R.id.progressBar);
         txtProgressStatus = findViewById(R.id.txtProgressStatus);
         txtLogOutput = findViewById(R.id.txtLogOutput);
@@ -81,6 +78,12 @@ public class MainActivity extends Activity {
 
         checkStoragePermissions();
         autoDetectSource();
+
+        if (isGameDataReady()) {
+            btnLaunchGame.setVisibility(View.VISIBLE);
+            btnLaunchGame.setText("Launch Installed Game 🚀");
+            txtProgressStatus.setText("Installed game data verified! Tap to launch or select an ISO below to reinstall.");
+        }
 
         btnSelectDisc.setOnClickListener(v -> openFilePicker());
         btnAutoDetect.setOnClickListener(v -> autoDetectSource());
@@ -94,6 +97,35 @@ public class MainActivity extends Activity {
         });
 
         btnLaunchGame.setOnClickListener(v -> launchGameDirectly());
+
+        btnResetData.setOnClickListener(v -> {
+            new AlertDialog.Builder(this)
+                .setTitle("Reset Game Data")
+                .setMessage("Are you sure you want to delete /sdcard/GalaxyData? This removes partial or broken installation files so you can install cleanly.")
+                .setPositiveButton("Delete & Reset", (dialog, which) -> {
+                    File dataDir = new File("/sdcard/GalaxyData");
+                    deleteRecursive(dataDir);
+                    btnLaunchGame.setVisibility(View.GONE);
+                    txtProgressStatus.setText("Cleaned /sdcard/GalaxyData. Ready for fresh install.");
+                    appendLog("[Reset] Cleared game directory: " + dataDir.getAbsolutePath());
+                    Toast.makeText(this, "Game data reset successfully.", Toast.LENGTH_SHORT).show();
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+        });
+    }
+
+    private void deleteRecursive(File fileOrDirectory) {
+        if (fileOrDirectory == null || !fileOrDirectory.exists()) return;
+        if (fileOrDirectory.isDirectory()) {
+            File[] children = fileOrDirectory.listFiles();
+            if (children != null) {
+                for (File child : children) {
+                    deleteRecursive(child);
+                }
+            }
+        }
+        fileOrDirectory.delete();
     }
 
     private void launchGameDirectly() {
@@ -411,13 +443,20 @@ public class MainActivity extends Activity {
         btnAutoDetect.setEnabled(true);
 
         if (success) {
+            try {
+                new File(Environment.getExternalStorageDirectory(), "GalaxyData/.installed_ok").createNewFile();
+            } catch (Exception ignored) {}
             txtProgressStatus.setText(R.string.status_done);
             appendLog("[SUCCESS] " + (message != null ? message : "Conversion complete!"));
             btnLaunchGame.setVisibility(View.VISIBLE);
+            btnLaunchGame.setText("Launch Game 🚀");
             Toast.makeText(this, "Game ready! Launching game now...", Toast.LENGTH_SHORT).show();
             // Automatically launch into game!
             mHandler.postDelayed(this::launchGameDirectly, 1000);
         } else {
+            try {
+                new File(Environment.getExternalStorageDirectory(), "GalaxyData/.installed_ok").delete();
+            } catch (Exception ignored) {}
             txtProgressStatus.setText(R.string.status_error);
             appendLog("[FAILURE] " + (message != null ? message : "Error during installation."));
             Toast.makeText(this, "Installation failed. Check log.", Toast.LENGTH_LONG).show();
