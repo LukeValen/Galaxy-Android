@@ -68,6 +68,7 @@ struct MobileApp {
     float stickOriginX = 0.0f;
     float stickOriginY = 0.0f;
     int spinFrames = 0;
+    bool gamepadDetected = false;
 };
 
 MobileApp gMobile;
@@ -378,10 +379,18 @@ int32_t onInput(android_app* app, AInputEvent* event) {
     int32_t eventType = AInputEvent_getType(event);
     if (eventType == AINPUT_EVENT_TYPE_MOTION) {
         int32_t source = AInputEvent_getSource(event);
-        bool isJoystickSource = (source & AINPUT_SOURCE_CLASS_JOYSTICK) != 0 || (source & AINPUT_SOURCE_GAMEPAD) != 0;
+        bool isJoystickSource = (source & AINPUT_SOURCE_CLASS_JOYSTICK) != 0 ||
+                                ((source & AINPUT_SOURCE_GAMEPAD) == AINPUT_SOURCE_GAMEPAD) ||
+                                ((source & AINPUT_SOURCE_JOYSTICK) == AINPUT_SOURCE_JOYSTICK);
 
-        // Physical gamepad analog stick mapping
+        // Physical gamepad analog stick, D-pad, and trigger mapping
         if (isJoystickSource) {
+            if (!a->gamepadDetected) {
+                a->gamepadDetected = true;
+                mobile_ui::get().showToast("Gamepad Connected 🎮");
+            }
+
+            // Left Stick (Analog Movement)
             float stickX = AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_X, 0);
             float stickY = AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_Y, 0);
             const float kDeadzone = 0.15f;
@@ -391,6 +400,42 @@ int32_t onInput(android_app* app, AInputEvent* event) {
             a->pad.connected = 1;
             a->pad.stickX = stickX;
             a->pad.stickY = -stickY; // Invert Y for Wii/GameCube convention
+
+            // D-Pad Hat axes (Standard on Xbox, PlayStation, 8BitDo, and HID pads)
+            float hatX = AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_HAT_X, 0);
+            float hatY = AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_HAT_Y, 0);
+            if (hatX < -0.5f) { a->pad.buttons |= 0x0001; a->pad.buttons &= ~0x0002; }
+            else if (hatX > 0.5f) { a->pad.buttons |= 0x0002; a->pad.buttons &= ~0x0001; }
+            else { a->pad.buttons &= ~0x0003; }
+
+            if (hatY < -0.5f) { a->pad.buttons |= 0x0008; a->pad.buttons &= ~0x0004; }
+            else if (hatY > 0.5f) { a->pad.buttons |= 0x0004; a->pad.buttons &= ~0x0008; }
+            else { a->pad.buttons &= ~0x000C; }
+
+            // Analog Triggers (L2 / R2)
+            float lTrig = std::max(AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_LTRIGGER, 0),
+                                   AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_BRAKE, 0));
+            float rTrig = std::max(AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_RTRIGGER, 0),
+                                   AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_GAS, 0));
+            if (lTrig > 0.4f) a->pad.buttons |= 0x2000; // Z button (Crouch / Ground Pound)
+            else a->pad.buttons &= ~0x2000;
+
+            if (rTrig > 0.4f) a->spinFrames = 6; // Spin shake
+
+            // Right Stick (Star Pointer navigation on physical pads)
+            float rightX = AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_Z, 0);
+            float rightY = AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_RZ, 0);
+            if (fabsf(rightX) <= 0.05f && fabsf(rightY) <= 0.05f) {
+                rightX = AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_RX, 0);
+                rightY = AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_RY, 0);
+            }
+            if (fabsf(rightX) > 0.18f || fabsf(rightY) > 0.18f) {
+                a->pad.pointerValid = 1;
+                a->pad.pointerX = rightX;
+                a->pad.pointerY = -rightY;
+                a->pad.pointerDist = 2.0f;
+            }
+
             port_input_set(0, &a->pad);
             return 1;
         }
@@ -413,6 +458,11 @@ int32_t onInput(android_app* app, AInputEvent* event) {
         // Do not intercept system volume keys: let Android OS adjust system volume normally
         if (keyCode == AKEYCODE_VOLUME_UP || keyCode == AKEYCODE_VOLUME_DOWN || keyCode == AKEYCODE_VOLUME_MUTE) {
             return 0;
+        }
+
+        if (!a->gamepadDetected && (keyCode >= AKEYCODE_BUTTON_A && keyCode <= AKEYCODE_BUTTON_16)) {
+            a->gamepadDetected = true;
+            mobile_ui::get().showToast("Gamepad Connected 🎮");
         }
 
         int32_t keyAction = AKeyEvent_getAction(event);
@@ -453,6 +503,8 @@ int32_t onInput(android_app* app, AInputEvent* event) {
             if (down) a->spinFrames = 6;  // Spin (Wiimote shake)
             break;
         case AKEYCODE_BUTTON_START:
+        case AKEYCODE_BUTTON_SELECT:
+        case AKEYCODE_BUTTON_MODE:
         case AKEYCODE_MENU:
             a->pad.connected = 1;
             if (down) a->pad.buttons |= 0x0010;  // Plus / Pause

@@ -335,9 +335,14 @@ void UIOverlay::closeSettings() {
 void UIOverlay::triggerSaveAnywhere() {
     port_trigger_quick_save();
     port_android_vibrate(50);
-    mSaveToastTimer = 2.5f;
-    mDirty = true;
+    showToast("Game Progress Saved Anywhere!");
     LOGI("Save anywhere requested and triggered from Mobile UI");
+}
+
+void UIOverlay::showToast(const std::string& msg) {
+    mToastMessage = msg;
+    mSaveToastTimer = 2.8f;
+    mDirty = true;
 }
 
 bool UIOverlay::init() {
@@ -985,10 +990,12 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
         mStickPointerId = -1;
         mStickKnobX = mStickBaseX;
         mStickKnobY = mStickBaseY;
-        pad.stickX = 0.0f;
-        pad.stickY = 0.0f;
+        if (fabsf(pad.stickX) < 0.05f && fabsf(pad.stickY) < 0.05f) {
+            pad.stickX = 0.0f;
+            pad.stickY = 0.0f;
+        }
         touchButtons = 0;
-        pad.buttons = 0;
+        pad.buttons &= ~0x3C1F; // Only clear touch bits, preserve physical controller buttons
         mFingerDownOnA = false;
         mFingerDownOnB = false;
         mFingerDownOnZ = false;
@@ -1291,7 +1298,7 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
         }
     }
 
-    pad.buttons = touchButtons;
+    pad.buttons = (pad.buttons & ~0x3C1F) | touchButtons;
     pad.pointerValid = 1;
     pad.pointerX = mPointerX;
     pad.pointerY = mPointerY;
@@ -2124,7 +2131,7 @@ void UIOverlay::render(int screenW, int screenH) {
         drawCircle(toastX + 24.0f * uiScale, toastY + toastH * 0.5f, 9.0f * uiScale, rgba(0.18f, 0.85f, 0.55f, toastAlpha));
         drawCircle(toastX + 24.0f * uiScale, toastY + toastH * 0.5f, 4.0f * uiScale, rgba(1.0f, 1.0f, 1.0f, toastAlpha));
 
-        drawText("Game Progress Saved Anywhere!", toastX + 42.0f * uiScale, toastY + toastH * 0.5f + 5.0f * uiScale, 0.35f * uiScale, rgba(0.95f, 1.0f, 0.97f, toastAlpha), 0);
+        drawText(mToastMessage.empty() ? "Game Progress Saved Anywhere!" : mToastMessage.c_str(), toastX + 42.0f * uiScale, toastY + toastH * 0.5f + 5.0f * uiScale, 0.35f * uiScale, rgba(0.95f, 1.0f, 0.97f, toastAlpha), 0);
     }
 
     if (verts.empty()) return;

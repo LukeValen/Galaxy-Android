@@ -61,6 +61,7 @@ public:
     bool isSettingsOpen() const { return mSettingsOpen || mDrawerAnim > 0.01f; }
     void closeSettings();
     void triggerSaveAnywhere();
+    void showToast(const std::string& msg);
     Settings& settings() { return mSettings; }
     void setPlusEdition(bool plus) { mPlusEdition = plus; }
     bool isPlusEdition() const { return mPlusEdition; }
@@ -169,7 +170,8 @@ private:
     bool mLogViewerOpen = false;
     float mLogScrollY = 0.0f;
 
-    // Save Anywhere Notification Toast Timer
+    // Toast Notification State
+    std::string mToastMessage = "Game Progress Saved Anywhere!";
     float mSaveToastTimer = 0.0f;
 
     // GL resources
