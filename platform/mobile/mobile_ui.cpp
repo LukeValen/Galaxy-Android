@@ -22,6 +22,8 @@
 
 namespace mobile_ui {
 
+extern "C" void port_android_exit_to_launcher();
+
 namespace {
 
 inline int64_t currentTimeMs() {
@@ -720,7 +722,7 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
         float contentW = drawerW - padX * 2.0f;
         float contentTop = mPlusEdition ? (112.0f * uiScale) : (68.0f * uiScale);
         float contentBottom = h - 56.0f * uiScale;
-        float totalContentH = (mSettingsTab == 0 || !mPlusEdition) ? (800.0f * uiScale) : (340.0f * uiScale);
+        float totalContentH = (mSettingsTab == 0 || !mPlusEdition) ? (930.0f * uiScale) : (340.0f * uiScale);
         float maxScroll = std::max(0.0f, totalContentH - (contentBottom - contentTop));
 
         // 1. Move Gesture for Smooth Scrolling
@@ -849,6 +851,12 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                             float midX = drawerX + padX + contentW * 0.5f;
                             if (px < midX) mSettings.graphicsBackend = 0; // OpenGL ES 3.2
                             else mSettings.graphicsBackend = 1; // Vulkan 1.1
+                        }
+                        // Row 15: Return to Setup / Launcher Button
+                        else if (contentRelY >= 846.0f * uiScale && contentRelY < 920.0f * uiScale) {
+                            mSettingsOpen = false;
+                            port_android_exit_to_launcher();
+                            return true;
                         }
                     } else {
                         // Advanced Tab items
@@ -1953,6 +1961,16 @@ void UIOverlay::render(int screenW, int screenH) {
                 drawText(gpuLine, cardX0 + 12.0f * uiScale, y + 18.0f * uiScale, 0.28f * uiScale, rgba(0.40f, 0.75f, 1.0f, 0.95f), 0);
                 drawText(resLine, cardX0 + 12.0f * uiScale, y + 34.0f * uiScale, 0.26f * uiScale, rgba(0.80f, 0.84f, 0.90f, 0.85f), 0);
                 drawText(apiLine, cardX0 + 12.0f * uiScale, y + 49.0f * uiScale, 0.24f * uiScale, rgba(0.55f, 0.60f, 0.68f, 0.80f), 0);
+            });
+
+            // Row 15: Return to Setup / Launcher Button
+            renderRow(850.0f * uiScale, 52.0f * uiScale, [&](float y) {
+                float bX0 = drawerX + padX;
+                float bX1 = drawerX + drawerW - padX;
+                float btnY = y + 4.0f * uiScale;
+                drawRoundRect(bX0, btnY, bX1, btnY + 40.0f * uiScale, 14.0f * uiScale, rgba(0.40f, 0.12f, 0.15f, 0.95f));
+                drawRoundRect(bX0, btnY, bX1, btnY + 40.0f * uiScale, 14.0f * uiScale, rgba(0.90f, 0.25f, 0.30f, 0.60f));
+                drawText("Exit to Setup Launcher 🚪", (bX0 + bX1) * 0.5f, btnY + 25.0f * uiScale, 0.38f * uiScale, rgba(1.0f, 0.88f, 0.88f, 1.0f), 1);
             });
         } else {
             // Advanced Tab Settings Items (Gameplay Mods)

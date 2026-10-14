@@ -626,6 +626,29 @@ extern "C" void port_android_vibrate(int ms) {
     }
 }
 
+extern "C" void port_android_exit_to_launcher() {
+    if (!gMobile.android || !gMobile.android->activity || !gMobile.android->activity->vm) return;
+    JavaVM* vm = gMobile.android->activity->vm;
+    JNIEnv* env = nullptr;
+    bool attached = false;
+    if (vm->GetEnv((void**)&env, JNI_VERSION_1_6) != JNI_OK) {
+        if (vm->AttachCurrentThread(&env, nullptr) == JNI_OK) {
+            attached = true;
+        }
+    }
+    if (env) {
+        jclass clazz = env->FindClass("com/openport/galaxyandroid/GameActivity");
+        if (clazz) {
+            jmethodID mid = env->GetStaticMethodID(clazz, "returnToLauncher", "()V");
+            if (mid) {
+                env->CallStaticVoidMethod(clazz, mid);
+            }
+            env->DeleteLocalRef(clazz);
+        }
+        if (attached) vm->DetachCurrentThread();
+    }
+}
+
 extern "C" __attribute__((visibility("default"))) void port_android_main(struct android_app* app, uintptr_t windowBase, size_t windowSize) {
     LOGI("==================================================");
     LOGI("GalaxyMobile: Native flat-screen mobile initialized");

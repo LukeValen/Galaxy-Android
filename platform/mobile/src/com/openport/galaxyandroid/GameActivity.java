@@ -7,6 +7,7 @@ import android.view.View;
 import android.view.WindowManager;
 
 import android.content.Context;
+import android.content.Intent;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 
@@ -38,6 +39,19 @@ public class GameActivity extends NativeActivity {
                             v.vibrate(ms);
                         }
                     }
+                } catch (Exception ignored) {}
+            });
+        }
+    }
+
+    public static void returnToLauncher() {
+        if (sInstance != null) {
+            sInstance.runOnUiThread(() -> {
+                try {
+                    Intent intent = new Intent(sInstance, MainActivity.class);
+                    intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
+                    sInstance.startActivity(intent);
+                    sInstance.finish();
                 } catch (Exception ignored) {}
             });
         }
