@@ -21,6 +21,8 @@ cooked/
 *.gcm
 *.ciso
 *.zip
+!installer-mobile/assets/pythonhome.zip
+!installer-mobile/vendor/python/stdlib/pythonhome.zip
 *.7z
 movies.tar
 screen*.png

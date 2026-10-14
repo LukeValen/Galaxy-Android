@@ -33,7 +33,12 @@ The first native ARM64 Android port of **Super Mario Galaxy**, executing compile
 - **Linux Case-Sensitivity Fixes**: Fixed `XanimeCore.hpp` and standardized all 12 `KariKariDirector.hpp` include paths across the codebase, resolving CI compiler failure on Ubuntu runners.
 - **Gamepad & TV / Handheld Support**: Configured `android.hardware.touchscreen` to `android:required="false"` and enabled `android.hardware.gamepad`, bringing native support to Odin, Retroid Pocket, Logitech G Cloud, and Android TV.
 
+#### 6. In-App Disc Extraction & SAF Storage Fixes
+- **Resolved `pythonhome.zip` Extraction Blocker**: Whitelisted `pythonhome.zip` in `.gitignore` to prevent embedded Python standard library assets from being omitted in release builds. Added packaging assertions guaranteeing Python runtime presence.
+- **Integrated Native Cooker (`libinstaller.so`)**: Added CMake build target for `installer` library with full JNI aliases for `com.openport.galaxyandroid`, enabling zero-setup in-app asset extraction.
+- **SAF Document & Content URI Handling**: Resolved `content://` URIs when selecting `.rvz`, `.iso`, or `.wbfs` files via Android's file picker, resolving clean filenames and streaming images for extraction without skipping the disc unpack step.
+
 ---
 
 ### Package Contents
-- `GalaxyAndroid.apk`: Unified APK containing native ARM64 `libgame.so`, `libmain.so`, and `libreserve.so` signed for Android 11+ (API 30+).
+- `GalaxyAndroid.apk`: Unified APK containing native ARM64 `libgame.so`, `libmain.so`, `libreserve.so`, `libinstaller.so`, and `libnodtool.so` signed for Android 11+ (API 30+).

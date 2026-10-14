@@ -181,4 +181,26 @@ if(ANDROID)
   add_executable(petari_headless platform/android/headless.c)
   target_link_libraries(petari_headless PRIVATE log dl m)
   target_include_directories(petari_headless PRIVATE platform/include)
+
+  # In-app disc converter and Python bridge library (libinstaller.so)
+  if(TARGET_MOBILE)
+    add_library(python310 SHARED IMPORTED)
+    set_target_properties(python310 PROPERTIES
+        IMPORTED_LOCATION ${CMAKE_SOURCE_DIR}/installer-mobile/vendor/python/lib/arm64-v8a/libpython3.10.so
+    )
+    add_library(installer SHARED
+        installer-mobile/jni/py_bridge.cpp
+        installer-mobile/jni/wii_extractor.cpp
+        installer-mobile/jni/aes.c
+        installer-mobile/jni/yaz0.c
+    )
+    target_include_directories(installer PRIVATE
+        ${CMAKE_SOURCE_DIR}/installer-mobile/vendor/python/include
+        ${CMAKE_SOURCE_DIR}/installer-mobile/jni
+    )
+    target_link_libraries(installer PRIVATE
+        python310
+        log
+    )
+  endif()
 endif()

@@ -9,6 +9,7 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.DocumentsContract;
 import android.provider.OpenableColumns;
 import android.provider.Settings;
 import android.text.method.ScrollingMovementMethod;
@@ -38,6 +39,8 @@ public class MainActivity extends Activity {
     private TextView txtLogOutput;
 
     private String mSelectedSourcePath = "";
+    private Uri mSelectedSourceUri = null;
+    private String mSelectedDisplayName = "";
     private final Handler mHandler = new Handler(Looper.getMainLooper());
     private boolean mIsCooking = false;
 
@@ -192,13 +195,39 @@ public class MainActivity extends Activity {
 
         Uri uri = data.getData();
         if (requestCode == REQ_PICK_DISC) {
+            mSelectedSourceUri = uri;
+            mSelectedDisplayName = getDisplayName(uri);
             String path = getPathFromUri(uri);
             if (path != null) {
-                selectSource(path, "Selected disc: " + new File(path).getName());
+                mSelectedSourcePath = path;
+                selectSource(path, "Selected disc: " + (mSelectedDisplayName.isEmpty() ? new File(path).getName() : mSelectedDisplayName));
             } else {
-                selectSource(uri.toString(), "Selected URI: " + uri.toString());
+                mSelectedSourcePath = uri.toString();
+                selectSource(mSelectedDisplayName.isEmpty() ? uri.toString() : mSelectedDisplayName,
+                        "Selected disc: " + (mSelectedDisplayName.isEmpty() ? uri.toString() : mSelectedDisplayName));
             }
         }
+    }
+
+    private String getDisplayName(Uri uri) {
+        String displayName = null;
+        if ("content".equalsIgnoreCase(uri.getScheme())) {
+            try (Cursor cursor = getContentResolver().query(uri, null, null, null, null)) {
+                if (cursor != null && cursor.moveToFirst()) {
+                    int nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                    if (nameIndex >= 0) {
+                        displayName = cursor.getString(nameIndex);
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+        if (displayName == null || displayName.isEmpty()) {
+            displayName = uri.getLastPathSegment();
+            if (displayName != null && displayName.contains("/")) {
+                displayName = displayName.substring(displayName.lastIndexOf('/') + 1);
+            }
+        }
+        return displayName != null ? displayName : "";
     }
 
     private String getPathFromUri(Uri uri) {
@@ -206,14 +235,30 @@ public class MainActivity extends Activity {
             return uri.getPath();
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-            String path = uri.getPath();
-            if (path != null && path.contains(":")) {
-                String[] parts = path.split(":");
-                if (parts.length > 1) {
-                    File f = new File(Environment.getExternalStorageDirectory(), parts[1]);
-                    if (f.exists()) return f.getAbsolutePath();
+            try {
+                if (DocumentsContract.isDocumentUri(this, uri)) {
+                    String docId = DocumentsContract.getDocumentId(uri);
+                    if (docId != null) {
+                        if (docId.startsWith("raw:")) {
+                            return docId.substring(4);
+                        }
+                        if (docId.startsWith("primary:")) {
+                            File f = new File(Environment.getExternalStorageDirectory(), docId.substring(8));
+                            if (f.exists()) return f.getAbsolutePath();
+                        }
+                    }
                 }
-            }
+                String displayName = getDisplayName(uri);
+                if (!displayName.isEmpty()) {
+                    File downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+                    File testFile = new File(downloadDir, displayName);
+                    if (testFile.exists()) return testFile.getAbsolutePath();
+
+                    File extDir = Environment.getExternalStorageDirectory();
+                    File testFile2 = new File(extDir, displayName);
+                    if (testFile2.exists()) return testFile2.getAbsolutePath();
+                }
+            } catch (Exception ignored) {}
         }
         return null;
     }
@@ -235,21 +280,51 @@ public class MainActivity extends Activity {
                 if (!outputDir.exists()) outputDir.mkdirs();
 
                 boolean includeMovies = chkIncludeMovies.isChecked();
-                File sourceFile = new File(mSelectedSourcePath);
-                String sourceLower = mSelectedSourcePath.toLowerCase();
+                String testName = !mSelectedDisplayName.isEmpty() ? mSelectedDisplayName : mSelectedSourcePath;
+                String lowerName = testName.toLowerCase();
+                boolean isDiscImage = lowerName.endsWith(".rvz") || lowerName.endsWith(".wbfs") || lowerName.endsWith(".iso") || lowerName.endsWith(".gcm");
+
+                File resolvedDiscFile = null;
+                if (isDiscImage) {
+                    if (new File(mSelectedSourcePath).exists()) {
+                        resolvedDiscFile = new File(mSelectedSourcePath);
+                    } else if (mSelectedSourceUri != null) {
+                        appendLog("[Setup] Reading disc image: " + mSelectedDisplayName + "...");
+                        mHandler.post(() -> txtProgressStatus.setText("Caching disc image for extraction..."));
+                        String ext = lowerName.endsWith(".rvz") ? "rvz" : lowerName.endsWith(".wbfs") ? "wbfs" : "iso";
+                        File tempDisc = new File(getFilesDir(), "temp_disc." + ext);
+                        if (tempDisc.exists()) tempDisc.delete();
+                        try (java.io.InputStream in = getContentResolver().openInputStream(mSelectedSourceUri);
+                             java.io.FileOutputStream out = new java.io.FileOutputStream(tempDisc)) {
+                            byte[] buf = new byte[1024 * 1024];
+                            int read;
+                            long total = 0;
+                            while ((read = in.read(buf)) > 0) {
+                                out.write(buf, 0, read);
+                                total += read;
+                                if (total % (50 * 1024 * 1024) == 0) {
+                                    final long mb = total / (1024 * 1024);
+                                    mHandler.post(() -> txtProgressStatus.setText("Buffered " + mb + " MB..."));
+                                }
+                            }
+                        }
+                        resolvedDiscFile = tempDisc;
+                    }
+                }
 
                 File extractionDir = outputDir;
                 File tempExtractionDir = null;
 
-                // Step 1: If source is disc image (.rvz, .iso, .wbfs), extract with native nodtool
-                if (sourceLower.endsWith(".rvz") || sourceLower.endsWith(".wbfs") || sourceLower.endsWith(".iso")) {
+                // Step 1: If source is disc image, extract with native nodtool
+                if (isDiscImage && resolvedDiscFile != null && resolvedDiscFile.exists()) {
                     tempExtractionDir = new File(getFilesDir(), "temp_extracted");
                     CookerEngine.deleteRecursive(tempExtractionDir);
                     tempExtractionDir.mkdirs();
 
+                    final String discPathToExtract = resolvedDiscFile.getAbsolutePath();
                     mHandler.post(() -> txtProgressStatus.setText("Extracting disc partition..."));
                     boolean extractSuccess = CookerEngine.extractWithNodtool(
-                        this, mSelectedSourcePath, tempExtractionDir.getAbsolutePath(), includeMovies,
+                        this, discPathToExtract, tempExtractionDir.getAbsolutePath(), includeMovies,
                         new CookerEngine.CookerCallback() {
                             @Override public void onLog(String line) { appendLog(line); }
                             @Override public void onProgress(int percent, String message) {
@@ -260,6 +335,11 @@ public class MainActivity extends Activity {
                             @Override public void onFinished(boolean success, String message) {}
                         }
                     );
+
+                    // If we created a temporary cached disc file from a content URI, free it now
+                    if (resolvedDiscFile.getAbsolutePath().startsWith(getFilesDir().getAbsolutePath())) {
+                        resolvedDiscFile.delete();
+                    }
 
                     if (!extractSuccess) {
                         mHandler.post(() -> onCookingCompleted(false, "Native disc extraction failed."));

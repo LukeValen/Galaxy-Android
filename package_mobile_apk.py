@@ -156,11 +156,23 @@ def main():
     if os.path.exists(nodtool_src):
         shutil.copyfile(nodtool_src, os.path.join(arm64_dir, "libnodtool.so"))
 
-    installer_src = os.path.join(ROOT, "build-installer", "lib", "arm64-v8a", "libinstaller.so")
-    if not os.path.exists(installer_src):
-        installer_src = os.path.join(ROOT, "build-installer", "native", "libinstaller.so")
-    if os.path.exists(installer_src):
-        shutil.copyfile(installer_src, os.path.join(arm64_dir, "libinstaller.so"))
+    installer_candidates = [
+        os.path.join(BUILD_MOBILE, "libinstaller.so"),
+        os.path.join(ROOT, "build-installer", "lib", "arm64-v8a", "libinstaller.so"),
+        os.path.join(ROOT, "build-installer", "native", "libinstaller.so"),
+    ]
+    installer_found = False
+    for cand in installer_candidates:
+        if os.path.exists(cand):
+            dst = os.path.join(arm64_dir, "libinstaller.so")
+            if STRIP and os.path.exists(STRIP):
+                run([STRIP, "--strip-unneeded", "-o", dst, cand])
+            else:
+                shutil.copyfile(cand, dst)
+            installer_found = True
+            break
+    if not installer_found:
+        print("[WARN] libinstaller.so not found in any build candidate path!")
 
     # Python runtime libraries
     py_lib_dir = os.path.join(INSTALLER_DIR, "vendor", "python", "lib", "arm64-v8a")
@@ -178,6 +190,14 @@ def main():
 
         # Add embedded python and scripts assets
         assets_dir = os.path.join(INSTALLER_DIR, "assets")
+        pyhome_target = os.path.join(assets_dir, "pythonhome.zip")
+        if not os.path.exists(pyhome_target):
+            vendor_zip = os.path.join(INSTALLER_DIR, "vendor", "python", "stdlib", "pythonhome.zip")
+            if os.path.exists(vendor_zip):
+                shutil.copyfile(vendor_zip, pyhome_target)
+        if not os.path.exists(pyhome_target):
+            raise RuntimeError("CRITICAL ERROR: pythonhome.zip is missing! Cannot build APK without Python environment.")
+
         if os.path.isdir(assets_dir):
             for root, _, files in os.walk(assets_dir):
                 for f in files:

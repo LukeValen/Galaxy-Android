@@ -55,7 +55,7 @@ jobs:
             -DANDROID_PLATFORM=android-30 \
             -DTARGET_MOBILE=ON \
             -DCMAKE_BUILD_TYPE=Release
-          ninja -C build-mobile game main reserve
+          ninja -C build-mobile game main reserve installer
 
       - name: Package Galaxy Android APK
         run: |

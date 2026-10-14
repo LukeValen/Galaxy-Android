@@ -285,3 +285,29 @@ Java_com_galaxy_installer_CookerEngine_runCooker(
 
     return result;
 }
+
+// ---------------------------------------------------------------------------
+// Unified JNI Aliases for package com.openport.galaxyandroid
+// ---------------------------------------------------------------------------
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_openport_galaxyandroid_CookerEngine_isWiiDisc(
+        JNIEnv *env, jclass clazz, jstring jFilePath) {
+    return Java_com_galaxy_installer_CookerEngine_isWiiDisc(env, clazz, jFilePath);
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_openport_galaxyandroid_CookerEngine_extractDisc(
+        JNIEnv *env, jclass clazz,
+        jstring jImagePath, jstring jOutDir,
+        jboolean jIncludeMovies, jobject jCallback) {
+    return Java_com_galaxy_installer_CookerEngine_extractDisc(env, clazz, jImagePath, jOutDir, jIncludeMovies, jCallback);
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_openport_galaxyandroid_CookerEngine_runCooker(
+        JNIEnv *env, jclass clazz,
+        jstring jPythonHome, jstring jScriptsDir,
+        jstring jInputDir, jstring jOutputDir,
+        jboolean jWithMovies, jobject jCallback) {
+    return Java_com_galaxy_installer_CookerEngine_runCooker(env, clazz, jPythonHome, jScriptsDir, jInputDir, jOutputDir, jWithMovies, jCallback);
+}
