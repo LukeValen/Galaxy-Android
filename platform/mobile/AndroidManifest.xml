@@ -20,14 +20,28 @@
         android:label="Galaxy Android"
         android:icon="@mipmap/ic_launcher"
         android:banner="@drawable/banner"
-        android:hasCode="false"
+        android:theme="@style/Theme.GalaxyAndroid"
+        android:hasCode="true"
         android:debuggable="true"
         android:extractNativeLibs="true"
         android:allowBackup="false">
 
+        <!-- Launcher & In-App Setup Activity -->
         <activity
-            android:name="android.app.NativeActivity"
+            android:name="com.openport.galaxyandroid.MainActivity"
             android:exported="true"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:screenOrientation="sensorLandscape">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Native Game Engine Activity -->
+        <activity
+            android:name="com.openport.galaxyandroid.GameActivity"
+            android:exported="false"
             android:excludeFromRecents="false"
             android:launchMode="singleTask"
             android:screenOrientation="sensorLandscape"
@@ -35,10 +49,6 @@
             android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen"
             android:configChanges="density|keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|uiMode">
             <meta-data android:name="android.app.lib_name" android:value="main" />
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
         </activity>
     </application>
 </manifest>

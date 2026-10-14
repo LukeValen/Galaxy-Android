@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build and package GalaxyAndroid.apk for ARM64 Android devices."""
+"""Build and package the unified GalaxyAndroid.apk (Game + In-App Disc Loader)."""
 import glob
 import os
 import shutil
@@ -26,6 +26,7 @@ if os.path.isdir(bt_parent):
 AAPT2 = os.path.join(BUILD_TOOLS_DIR, "aapt2.exe") if os.name == "nt" else os.path.join(BUILD_TOOLS_DIR, "aapt2")
 ZIPALIGN = os.path.join(BUILD_TOOLS_DIR, "zipalign.exe") if os.name == "nt" else os.path.join(BUILD_TOOLS_DIR, "zipalign")
 APKSIGNER = os.path.join(BUILD_TOOLS_DIR, "apksigner.bat") if os.name == "nt" else os.path.join(BUILD_TOOLS_DIR, "apksigner")
+D8 = os.path.join(BUILD_TOOLS_DIR, "d8.bat") if os.name == "nt" else os.path.join(BUILD_TOOLS_DIR, "d8")
 
 # 3. Resolve android.jar (pick highest available API platform)
 ANDROID_JAR = ""
@@ -35,7 +36,7 @@ if os.path.isdir(platforms_dir):
     if candidates:
         ANDROID_JAR = os.path.join(platforms_dir, candidates[0], "android.jar")
 
-# 4. Resolve NDK
+# 4. Resolve NDK & Strip
 NDK_DIR = os.environ.get("ANDROID_NDK_HOME") or ""
 if not NDK_DIR and SDK:
     ndk_parent = os.path.join(SDK, "ndk")
@@ -51,26 +52,40 @@ if NDK_DIR:
     if matches:
         STRIP = matches[0]
 
-BUILD = os.path.join(ROOT, "build-mobile")
+# 5. Resolve JAVAC
+JAVAC = shutil.which("javac") or "javac"
+
+BUILD_MOBILE = os.path.join(ROOT, "build-mobile")
 OUT = os.path.join(ROOT, "out-mobile")
 KEYSTORE = os.path.join(ROOT, "out", "debug.keystore")
+INSTALLER_DIR = os.path.join(ROOT, "installer-mobile")
 
 def run(cmd):
     print("[RUN]", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
 def main():
-    print("=== Packaging GalaxyAndroid.apk (com.openport.galaxyandroid) ===")
+    print("=== Packaging Unified GalaxyAndroid.apk (com.openport.galaxyandroid) ===")
     print(f"  SDK: {SDK}")
     print(f"  Build Tools: {BUILD_TOOLS_DIR}")
     print(f"  Platform JAR: {ANDROID_JAR}")
+    print(f"  D8: {D8}")
+    print(f"  Javac: {JAVAC}")
     print(f"  NDK: {NDK_DIR}")
     print(f"  Strip: {STRIP}")
 
     os.makedirs(OUT, exist_ok=True)
     os.makedirs(os.path.join(ROOT, "out"), exist_ok=True)
+
+    gen_dir = os.path.join(OUT, "gen")
+    classes_dir = os.path.join(OUT, "classes")
+    dex_dir = os.path.join(OUT, "dex")
     apk_dir = os.path.join(OUT, "apk")
-    shutil.rmtree(apk_dir, ignore_errors=True)
+
+    for d in [gen_dir, classes_dir, dex_dir, apk_dir]:
+        shutil.rmtree(d, ignore_errors=True)
+        os.makedirs(d, exist_ok=True)
+
     arm64_dir = os.path.join(apk_dir, "lib", "arm64-v8a")
     os.makedirs(arm64_dir, exist_ok=True)
 
@@ -85,11 +100,11 @@ def main():
             "-validity", "10000", "-dname", "CN=GalaxyAndroid Debug,O=Local,C=US"
         ], check=True)
 
-    # 1. Compile resources with AAPT2
+    # 1. Compile resources with AAPT2 and generate R.java
     res_zip = os.path.join(OUT, "res.zip")
     if os.path.exists(res_zip):
         os.remove(res_zip)
-    run([AAPT2, "compile", "--dir", os.path.join(ROOT, "platform", "android", "res"), "-o", res_zip])
+    run([AAPT2, "compile", "--dir", os.path.join(ROOT, "platform", "mobile", "res"), "-o", res_zip])
 
     base_apk = os.path.join(OUT, "base.apk")
     if os.path.exists(base_apk):
@@ -101,17 +116,32 @@ def main():
         "-R", res_zip,
         "--auto-add-overlay",
         "-I", ANDROID_JAR,
+        "--java", gen_dir,
         "--min-sdk-version", "30",
         "--target-sdk-version", "34"
     ])
 
-    # 2. Copy and strip wrap.sh and native libraries
+    # 2. Compile Java sources (MainActivity, CookerEngine, GameActivity, R.java)
+    src_files = glob.glob(os.path.join(ROOT, "platform", "mobile", "src", "com", "openport", "galaxyandroid", "*.java"))
+    r_files = glob.glob(os.path.join(gen_dir, "**", "*.java"), recursive=True)
+    all_java = src_files + r_files
+    print(f"[JAVAC] Compiling {len(all_java)} Java sources...")
+    run([JAVAC, "-cp", ANDROID_JAR, "-d", classes_dir, "-source", "1.8", "-target", "1.8"] + all_java)
+
+    # 3. Desugar and Dex with D8
+    class_files = glob.glob(os.path.join(classes_dir, "**", "*.class"), recursive=True)
+    print(f"[D8] Converting {len(class_files)} classes to classes.dex...")
+    run([D8, "--output", dex_dir, "--lib", ANDROID_JAR, "--min-api", "30"] + class_files)
+
+    # 4. Copy and strip wrap.sh and native libraries into arm64-v8a
     wrap_src = os.path.join(ROOT, "platform", "android", "wrap.sh")
     with open(wrap_src, "rb") as f_in, open(os.path.join(arm64_dir, "wrap.sh"), "wb") as f_out:
         f_out.write(f_in.read().replace(b"\r\n", b"\n"))
 
-    for lib in ["libgame.so", "libmain.so", "libreserve.so"]:
-        src_lib = os.path.join(BUILD, lib)
+    # Game engine libraries
+    game_libs = ["libgame.so", "libmain.so", "libreserve.so"]
+    for lib in game_libs:
+        src_lib = os.path.join(BUILD_MOBILE, lib)
         dst_lib = os.path.join(arm64_dir, lib)
         if os.path.exists(src_lib):
             if STRIP and os.path.exists(STRIP):
@@ -121,8 +151,41 @@ def main():
         else:
             print(f"[WARN] Native library {src_lib} not found in build directory.")
 
-    # 3. Add lib folder into base.apk (store uncompressed so zipalign can page-align native libraries)
+    # Cooker and disc extractor libraries
+    nodtool_src = os.path.join(INSTALLER_DIR, "vendor", "nodtool", "libnodtool.so")
+    if os.path.exists(nodtool_src):
+        shutil.copyfile(nodtool_src, os.path.join(arm64_dir, "libnodtool.so"))
+
+    installer_src = os.path.join(ROOT, "build-installer", "lib", "arm64-v8a", "libinstaller.so")
+    if not os.path.exists(installer_src):
+        installer_src = os.path.join(ROOT, "build-installer", "native", "libinstaller.so")
+    if os.path.exists(installer_src):
+        shutil.copyfile(installer_src, os.path.join(arm64_dir, "libinstaller.so"))
+
+    # Python runtime libraries
+    py_lib_dir = os.path.join(INSTALLER_DIR, "vendor", "python", "lib", "arm64-v8a")
+    if os.path.isdir(py_lib_dir):
+        for lib in os.listdir(py_lib_dir):
+            if lib.endswith(".so"):
+                shutil.copyfile(os.path.join(py_lib_dir, lib), os.path.join(arm64_dir, lib))
+
+    # 5. Add dex, assets, and lib into base.apk
+    dex_file = os.path.join(dex_dir, "classes.dex")
     with zipfile.ZipFile(base_apk, "a") as z:
+        # Add classes.dex
+        if os.path.exists(dex_file):
+            z.write(dex_file, "classes.dex", compress_type=zipfile.ZIP_DEFLATED)
+
+        # Add embedded python and scripts assets
+        assets_dir = os.path.join(INSTALLER_DIR, "assets")
+        if os.path.isdir(assets_dir):
+            for root, _, files in os.walk(assets_dir):
+                for f in files:
+                    p = os.path.join(root, f)
+                    arc = os.path.relpath(p, INSTALLER_DIR).replace("\\", "/")
+                    z.write(p, arc, compress_type=zipfile.ZIP_DEFLATED)
+
+        # Add native libraries (store uncompressed so zipalign can page-align them)
         for root, _, files in os.walk(os.path.join(apk_dir, "lib")):
             for f in files:
                 p = os.path.join(root, f)
@@ -130,13 +193,13 @@ def main():
                 compress_type = zipfile.ZIP_STORED if f.endswith(".so") else zipfile.ZIP_DEFLATED
                 z.write(p, arc, compress_type=compress_type)
 
-    # 4. Zipalign (16-byte alignment required for modern 16KB/4KB page size compatibility)
+    # 6. Zipalign (16-byte alignment required for modern 16KB/4KB page size compatibility)
     aligned_apk = os.path.join(OUT, "aligned.apk")
     if os.path.exists(aligned_apk):
         os.remove(aligned_apk)
     run([ZIPALIGN, "-f", "-p", "16", base_apk, aligned_apk])
 
-    # 5. Apksigner (v1 + v2 + v3 signing)
+    # 7. Apksigner (v1 + v2 + v3 signing)
     final_apk = os.path.join(OUT, "GalaxyAndroid.apk")
     if os.path.exists(final_apk):
         os.remove(final_apk)
@@ -149,11 +212,12 @@ def main():
         aligned_apk
     ])
 
-    # Cleanup temp files
+    # Cleanup temp build files
     for temp in [base_apk, aligned_apk, res_zip]:
         if os.path.exists(temp):
             os.remove(temp)
-    shutil.rmtree(apk_dir, ignore_errors=True)
+    for d in [gen_dir, classes_dir, dex_dir, apk_dir]:
+        shutil.rmtree(d, ignore_errors=True)
 
     print(f"\n[SUCCESS] Built unified package: {final_apk} ({os.path.getsize(final_apk)} bytes)")
 

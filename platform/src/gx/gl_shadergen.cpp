@@ -25,9 +25,9 @@ struct Out {
 };
 
 const char* kUniformBlocks = R"(
-layout(std430, binding = 0) readonly buffer RowBuf { vec4 rows[]; };
-layout(std430, binding = 1) readonly buffer RecBuf { uint recs[]; };
-layout(std430, binding = 2) readonly buffer StateBuf { vec4 st[]; };
+layout(std430, binding = 0) buffer RowBuf { vec4 rows[]; };
+layout(std430, binding = 1) buffer RecBuf { uint recs[]; };
+layout(std430, binding = 2) buffer StateBuf { vec4 st[]; };
 layout(std140, binding = 2) uniform EyeBlock {
     vec4 vrView[4];
     vec4 vrProj[4];
@@ -107,7 +107,7 @@ std::string genVertexShader(const ShaderUid& u) {
     if (f & VF_TEXMTX) o.w("layout(location = 15) in uvec2 a_texmtx;\n");
     // Draw record of this vertex: indices are relative to the batch's first
     // vertex, so gl_VertexID + the batch's first ordinal indexes vtxRec[].
-    o.w("layout(std430, binding = 3) readonly buffer VtxRecBuf { uint vtxRec[]; };\n");
+    o.w("layout(std430, binding = 3) buffer VtxRecBuf { uint vtxRec[]; };\n");
     o.w("uniform uint u_firstOrdinal;\n");
     o.w("flat out uint v_pix;\n");
     o.w("out vec4 v_clr0;\nout vec4 v_clr1;\n");
@@ -116,8 +116,8 @@ std::string genVertexShader(const ShaderUid& u) {
     if (u.cutaway) o.w("out vec3 v_eye;\n");
 
     // Matrix rows: slot bases come from the draw record (3 rows per slot).
-    o.w("uint slotRow(uint rb, uint firstSlot, int idx) { return recs[rb + firstSlot + uint(idx / 3)] + uint(idx %% 3); }\n");
-    o.w("vec3 mulRows(uint r, vec4 v) { return vec3(dot(rows[r], v), dot(rows[r + 1u], v), dot(rows[r + 2u], v)); }\n");
+    o.w("#define slotRow(rb, firstSlot, idx) (recs[(rb) + (firstSlot) + uint((idx) / 3)] + uint((idx) %% 3))\n");
+    o.w("#define mulRows(r, v) vec3(dot(rows[r], v), dot(rows[(r) + 1u], v), dot(rows[(r) + 2u], v))\n");
     o.w("#define L(i) st[lbase + uint(i)]\n");
     o.w("void main() {\n");
     o.w("  uint rb = vtxRec[u_firstOrdinal + uint(gl_VertexID)] * %uu;\n", (unsigned)kRecWords);
