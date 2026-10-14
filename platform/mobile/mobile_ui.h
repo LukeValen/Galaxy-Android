@@ -26,6 +26,14 @@ struct Settings {
     bool modFly = false;
     bool modSkipCutscenes = false;
     bool modInfiniteHealth = false;
+    bool modInfiniteLives = false;
+    bool modInfiniteStarBits = false;
+
+    // Game Speed Multiplier (1 = 1x, 2 = 1.5x, 3 = 2x, 4 = 3x, 5 = 4x)
+    int gameSpeed = 1;
+
+    // In-game Language (0 = Auto, 1 = English, 2 = Spanish, 3 = French, 4 = German, 5 = Italian)
+    int languageChoice = 0;
 
     // FPS configuration
     int targetFps = 60;  // 60, 90, or 120
@@ -71,7 +79,7 @@ private:
 
     Settings mSettings;
     std::string mSavePath;
-    bool mPlusEdition = false;
+    bool mPlusEdition = true;
     bool mInitialized = false;
     bool mDirty = false;
 

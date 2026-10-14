@@ -261,13 +261,13 @@ std::string genVertexShader(const ShaderUid& u) {
                     o.w("      vec3 dv = (dot(ldirv, ldirv) > 1e-6) ? ldirv : vec3(0.0, 0.0, -1.0);\n");
                     o.w("      float a = max(0.0, dot(ldir, dv));\n");
                     o.w("      float distDenom = dot(ldist, vec3(1.0, d, d2));\n");
-                    o.w("      att = (distDenom > 1e-5) ? max(0.0, dot(lcos, vec3(1.0, a, a * a))) / distDenom : 1.0;\n");
+                    o.w("      att = (distDenom > 1e-5) ? clamp(dot(lcos, vec3(1.0, a, a * a)) / distDenom, 0.0, 1.0) : 0.0;\n");
                 } else {
                     o.w("      ldir = (dot(lpos, lpos) > 1e-6) ? normalize(lpos) : normalize(-pos);\n");
                     o.w("      vec3 dv = (dot(ldirv, ldirv) > 1e-6) ? ldirv : vec3(0.0, 0.0, -1.0);\n");
                     o.w("      float a = (dot(nrm, ldir) >= 0.0) ? max(0.0, dot(nrm, dv)) : 0.0;\n");
                     o.w("      float distDenom = dot(ldist, vec3(1.0, a, a * a));\n");
-                    o.w("      att = (distDenom > 1e-5) ? max(0.0, dot(lcos, vec3(1.0, a, a * a))) / distDenom : 1.0;\n");
+                    o.w("      att = (distDenom > 1e-5) ? clamp(dot(lcos, vec3(1.0, a, a * a)) / distDenom, 0.0, 1.0) : 0.0;\n");
                 }
                 const char* dif = diffuse == 0 ? "1.0" : diffuse == 1 ? "dot(ldir, nrm)" : "max(0.0, dot(ldir, nrm))";
                 o.w("      lit += att * %s * lcol.%s;\n", dif, sw);
@@ -634,9 +634,8 @@ std::string genFragmentShader(const ShaderUid& u) {
             }
         }
     }
-    // The TEV's output is 8 bits wide: the upper bits are dropped, not
-    // clamped (Mario's eyelids rely on it for their alpha test).
-    o.w("  ivec4 outi = ivec4(%s.rgb, %s.a) & 255;\n", kDest[lastColorDest], kDest[lastAlphaDest]);
+    // The TEV's output is 8 bits wide: clamp RGB and mask alpha (Mario's eyelids rely on alpha for test).
+    o.w("  ivec4 outi = ivec4(clamp(%s.rgb, ivec3(0), ivec3(255)), %s.a & 255);\n", kDest[lastColorDest], kDest[lastAlphaDest]);
     o.w("  vec4 outc = vec4(outi) / 255.0;\n");
     // Alpha test (on the 8-bit value).
     {

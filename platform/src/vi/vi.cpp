@@ -61,11 +61,17 @@ static void viIrq() {
     OSWakeupThread(&sRetraceQueue);
 }
 
+static std::atomic<float> sSpeedMultiplier{1.0f};
+
 static void viClock() {
     // NTSC / EURGB60 field rate.
-    const int64_t period = 16683350;  // ns (1001/60000 s)
+    const int64_t basePeriod = 16683350;  // ns (1001/60000 s)
+    float speed = sSpeedMultiplier.load();
+    int64_t period = (int64_t)((double)basePeriod / (speed > 0.1f ? speed : 1.0f));
     int64_t next = port_host_time_ns() + period;
     for (;;) {
+        speed = sSpeedMultiplier.load();
+        period = (int64_t)((double)basePeriod / (speed > 0.1f ? speed : 1.0f));
         int64_t now = port_host_time_ns();
         if (next > now) {
             port_host_sleep_ns(next - now);
@@ -101,6 +107,16 @@ void port_set_paused(int paused) {
 }
 
 int port_is_paused(void) { return sPaused.load(); }
+
+void port_set_game_speed(float speed) {
+    if (speed < 0.25f) speed = 0.25f;
+    if (speed > 5.0f) speed = 5.0f;
+    sSpeedMultiplier.store(speed);
+}
+
+float port_get_game_speed(void) {
+    return sSpeedMultiplier.load();
+}
 
 void VIInit(void) {
     if (sInited) {

@@ -24,6 +24,33 @@
 namespace mobile_ui {
 
 extern "C" void port_android_exit_to_launcher();
+extern "C" void port_set_game_speed(float speed);
+extern "C" float port_get_game_speed(void);
+extern "C" void port_language_set(const char* name);
+
+inline void applyGameSpeed(int speedIdx) {
+    float speed = 1.0f;
+    switch (speedIdx) {
+        case 1: speed = 1.0f; break;
+        case 2: speed = 1.5f; break;
+        case 3: speed = 2.0f; break;
+        case 4: speed = 3.0f; break;
+        case 5: speed = 4.0f; break;
+        default: speed = 1.0f; break;
+    }
+    port_set_game_speed(speed);
+}
+
+inline void applyLanguage(int langIdx) {
+    switch (langIdx) {
+        case 1: port_language_set("english"); break;
+        case 2: port_language_set("spanish"); break;
+        case 3: port_language_set("french"); break;
+        case 4: port_language_set("german"); break;
+        case 5: port_language_set("italian"); break;
+        default: break;
+    }
+}
 
 namespace {
 
@@ -258,6 +285,10 @@ void Settings::load(const std::string& path) {
             else if (!strcmp(key, "mod_fly")) modFly = (val > 0.5f);
             else if (!strcmp(key, "mod_skip_cutscenes")) modSkipCutscenes = (val > 0.5f);
             else if (!strcmp(key, "mod_infinite_health")) modInfiniteHealth = (val > 0.5f);
+            else if (!strcmp(key, "mod_infinite_lives")) modInfiniteLives = (val > 0.5f);
+            else if (!strcmp(key, "mod_infinite_starbits")) modInfiniteStarBits = (val > 0.5f);
+            else if (!strcmp(key, "game_speed")) gameSpeed = std::max(1, std::min(5, (int)val));
+            else if (!strcmp(key, "language_choice")) languageChoice = std::max(0, std::min(5, (int)val));
             else if (!strcmp(key, "target_fps")) targetFps = (int)val;  // 60, 90, or 120
             else if (!strcmp(key, "adaptive_fps")) adaptiveFps = (val > 0.5f);
             else if (!strcmp(key, "full_touch_mode")) fullTouchMode = (val > 0.5f);
@@ -265,8 +296,8 @@ void Settings::load(const std::string& path) {
         }
     }
     fclose(f);
-    LOGI("Loaded settings: show=%d, full=%d, touch=%d, hud=%d, op=%.2f, scale=%.2f, dpad=%d, fly=%d, skip=%d, infHp=%d",
-         showControls, fullscreen, fullTouchMode, perfHudMode, opacity, scale, showDpad, modFly, modSkipCutscenes, modInfiniteHealth);
+    LOGI("Loaded settings: show=%d, full=%d, touch=%d, hud=%d, op=%.2f, scale=%.2f, dpad=%d, fly=%d, skip=%d, infHp=%d, infLives=%d, infBits=%d, spd=%d, lang=%d",
+         showControls, fullscreen, fullTouchMode, perfHudMode, opacity, scale, showDpad, modFly, modSkipCutscenes, modInfiniteHealth, modInfiniteLives, modInfiniteStarBits, gameSpeed, languageChoice);
 }
 
 void Settings::save(const std::string& path) const {
@@ -290,6 +321,10 @@ void Settings::save(const std::string& path) const {
     fprintf(f, "mod_fly=%d\n", modFly ? 1 : 0);
     fprintf(f, "mod_skip_cutscenes=%d\n", modSkipCutscenes ? 1 : 0);
     fprintf(f, "mod_infinite_health=%d\n", modInfiniteHealth ? 1 : 0);
+    fprintf(f, "mod_infinite_lives=%d\n", modInfiniteLives ? 1 : 0);
+    fprintf(f, "mod_infinite_starbits=%d\n", modInfiniteStarBits ? 1 : 0);
+    fprintf(f, "game_speed=%d\n", gameSpeed);
+    fprintf(f, "language_choice=%d\n", languageChoice);
     fprintf(f, "target_fps=%d\n", targetFps);
     fprintf(f, "adaptive_fps=%d\n", adaptiveFps ? 1 : 0);
     fclose(f);
@@ -309,12 +344,8 @@ UIOverlay& UIOverlay::get() {
 void UIOverlay::setSavePath(const std::string& path) {
     mSavePath = path;
     mSettings.load(path);
-    if (!mPlusEdition) {
-        mSettings.modFly = false;
-        mSettings.modSkipCutscenes = false;
-        mSettings.modInfiniteHealth = false;
-        mSettingsTab = 0;
-    }
+    applyGameSpeed(mSettings.gameSpeed);
+    applyLanguage(mSettings.languageChoice);
 }
 
 bool UIOverlay::needsRedraw() {
@@ -758,7 +789,7 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
         float contentW = drawerW - padX * 2.0f;
         float contentTop = mPlusEdition ? (112.0f * uiScale) : (68.0f * uiScale);
         float contentBottom = h - 56.0f * uiScale;
-        float totalContentH = (mSettingsTab == 0 || !mPlusEdition) ? (930.0f * uiScale) : (340.0f * uiScale);
+        float totalContentH = (mSettingsTab == 0 || !mPlusEdition) ? (1040.0f * uiScale) : (440.0f * uiScale);
         float maxScroll = std::max(0.0f, totalContentH - (contentBottom - contentTop));
 
         // 1. Move Gesture for Smooth Scrolling
@@ -888,25 +919,61 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                             if (px < midX) mSettings.graphicsBackend = 0; // OpenGL ES 3.2
                             else mSettings.graphicsBackend = 1; // Vulkan 1.1
                         }
-                        // Row 15: Return to Setup / Launcher Button
-                        else if (contentRelY >= 846.0f * uiScale && contentRelY < 920.0f * uiScale) {
+                        // Row 14: Game Speed Multiplier (Turbo / Fast-Forward)
+                        else if (contentRelY >= 776.0f * uiScale && contentRelY < 834.0f * uiScale) {
+                            float segW = contentW / 5.0f;
+                            int idx = (int)((px - (drawerX + padX)) / segW);
+                            mSettings.gameSpeed = std::max(1, std::min(5, idx + 1));
+                            applyGameSpeed(mSettings.gameSpeed);
+                            showToast(mSettings.gameSpeed == 1 ? "Game Speed: 1.0x (Normal)" :
+                                      mSettings.gameSpeed == 2 ? "Game Speed: 1.5x" :
+                                      mSettings.gameSpeed == 3 ? "Game Speed: 2.0x (Fast)" :
+                                      mSettings.gameSpeed == 4 ? "Game Speed: 3.0x" : "Game Speed: 4.0x (Turbo)");
+                        }
+                        // Row 15: Game Language
+                        else if (contentRelY >= 834.0f * uiScale && contentRelY < 892.0f * uiScale) {
+                            float segW = contentW / 6.0f;
+                            int idx = (int)((px - (drawerX + padX)) / segW);
+                            mSettings.languageChoice = std::max(0, std::min(5, idx));
+                            applyLanguage(mSettings.languageChoice);
+                            showToast(mSettings.languageChoice == 0 ? "Language: System Auto" :
+                                      mSettings.languageChoice == 1 ? "Language: English" :
+                                      mSettings.languageChoice == 2 ? "Language: Español" :
+                                      mSettings.languageChoice == 3 ? "Language: Français" :
+                                      mSettings.languageChoice == 4 ? "Language: Deutsch" : "Language: Italiano");
+                        }
+                        // Row 17: Return to Setup / Launcher Button
+                        else if (contentRelY >= 962.0f * uiScale && contentRelY < 1030.0f * uiScale) {
                             mSettingsOpen = false;
                             port_android_exit_to_launcher();
                             return true;
                         }
                     } else {
-                        // Advanced Tab items
+                        // Advanced / Cheats Tab items
                         // Mod 1: Fly Mode Switch
-                        if (contentRelY >= 48.0f * uiScale && contentRelY <= 106.0f * uiScale) {
+                        if (contentRelY >= 48.0f * uiScale && contentRelY <= 104.0f * uiScale) {
                             mSettings.modFly = !mSettings.modFly;
+                            showToast(mSettings.modFly ? "Fly Mode: ON 🪽" : "Fly Mode: OFF");
                         }
                         // Mod 2: Cutscene Prevention Switch
-                        else if (contentRelY >= 110.0f * uiScale && contentRelY <= 168.0f * uiScale) {
+                        else if (contentRelY >= 106.0f * uiScale && contentRelY <= 160.0f * uiScale) {
                             mSettings.modSkipCutscenes = !mSettings.modSkipCutscenes;
+                            showToast(mSettings.modSkipCutscenes ? "Skip Cutscenes: ON ⏩" : "Skip Cutscenes: OFF");
                         }
                         // Mod 3: Infinite Health Switch
-                        else if (contentRelY >= 172.0f * uiScale && contentRelY <= 230.0f * uiScale) {
+                        else if (contentRelY >= 162.0f * uiScale && contentRelY <= 216.0f * uiScale) {
                             mSettings.modInfiniteHealth = !mSettings.modInfiniteHealth;
+                            showToast(mSettings.modInfiniteHealth ? "Infinite Health: ON 🛡️" : "Infinite Health: OFF");
+                        }
+                        // Mod 4: Infinite Lives Switch
+                        else if (contentRelY >= 218.0f * uiScale && contentRelY <= 272.0f * uiScale) {
+                            mSettings.modInfiniteLives = !mSettings.modInfiniteLives;
+                            showToast(mSettings.modInfiniteLives ? "Infinite Lives (99): ON 🍄" : "Infinite Lives: OFF");
+                        }
+                        // Mod 5: Infinite Star Bits Switch
+                        else if (contentRelY >= 274.0f * uiScale && contentRelY <= 334.0f * uiScale) {
+                            mSettings.modInfiniteStarBits = !mSettings.modInfiniteStarBits;
+                            showToast(mSettings.modInfiniteStarBits ? "Infinite Star Bits (999): ON ⭐" : "Infinite Star Bits: OFF");
                         }
                     }
 
@@ -1837,7 +1904,7 @@ void UIOverlay::render(int screenW, int screenH) {
         float contentW = drawerW - padX * 2.0f;
         float contentTop = mPlusEdition ? (112.0f * uiScale) : (68.0f * uiScale);
         float contentBottom = h - 56.0f * uiScale;
-        float totalContentH = (mSettingsTab == 0 || !mPlusEdition) ? (860.0f * uiScale) : (340.0f * uiScale);
+        float totalContentH = (mSettingsTab == 0 || !mPlusEdition) ? (1040.0f * uiScale) : (440.0f * uiScale);
         float maxScroll = std::max(0.0f, totalContentH - (contentBottom - contentTop));
 
         // Smooth scroll damping
@@ -1981,8 +2048,24 @@ void UIOverlay::render(int screenW, int screenH) {
                 drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, backendOpts, 2, bkIdx);
             });
 
-            // Row 14: Realtime Hardware & Device Info Card
-            renderRow(780.0f * uiScale, 64.0f * uiScale, [&](float y) {
+            // Row 14: Game Speed Multiplier (Fast-Forward / Turbo)
+            renderRow(776.0f * uiScale, 54.0f * uiScale, [&](float y) {
+                drawText("Game / Dialogue Speed", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+                const char* spdOpts[5] = {"1.0x", "1.5x", "2.0x", "3.0x", "4.0x"};
+                int spdIdx = std::max(0, std::min(4, mSettings.gameSpeed - 1));
+                drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, spdOpts, 5, spdIdx);
+            });
+
+            // Row 15: Game Language Selector
+            renderRow(834.0f * uiScale, 54.0f * uiScale, [&](float y) {
+                drawText("Game Language", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+                const char* langOpts[6] = {"Auto", "EN", "ES", "FR", "DE", "IT"};
+                int langIdx = std::max(0, std::min(5, mSettings.languageChoice));
+                drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, langOpts, 6, langIdx);
+            });
+
+            // Row 16: Realtime Hardware & Device Info Card
+            renderRow(892.0f * uiScale, 64.0f * uiScale, [&](float y) {
                 float cardX0 = drawerX + padX;
                 float cardX1 = drawerX + drawerW - padX;
                 float cardH = 60.0f * uiScale;
@@ -1999,8 +2082,8 @@ void UIOverlay::render(int screenW, int screenH) {
                 drawText(apiLine, cardX0 + 12.0f * uiScale, y + 49.0f * uiScale, 0.24f * uiScale, rgba(0.55f, 0.60f, 0.68f, 0.80f), 0);
             });
 
-            // Row 15: Return to Setup / Launcher Button
-            renderRow(850.0f * uiScale, 52.0f * uiScale, [&](float y) {
+            // Row 17: Return to Setup / Launcher Button
+            renderRow(962.0f * uiScale, 52.0f * uiScale, [&](float y) {
                 float bX0 = drawerX + padX;
                 float bX1 = drawerX + drawerW - padX;
                 float btnY = y + 4.0f * uiScale;
@@ -2009,7 +2092,7 @@ void UIOverlay::render(int screenW, int screenH) {
                 drawText("Exit to Setup Launcher 🚪", (bX0 + bX1) * 0.5f, btnY + 25.0f * uiScale, 0.38f * uiScale, rgba(1.0f, 0.88f, 0.88f, 1.0f), 1);
             });
         } else {
-            // Advanced Tab Settings Items (Gameplay Mods)
+            // Advanced / Cheats Tab Settings Items (Gameplay Mods)
             auto renderRow = [&](float relY, float rowH, auto func) {
                 float drawY = contentTop + relY - mDrawerScrollY;
                 if (drawY + rowH >= contentTop - 12.0f && drawY <= contentBottom + 12.0f) {
@@ -2019,8 +2102,8 @@ void UIOverlay::render(int screenW, int screenH) {
 
             // Section Header
             renderRow(6.0f * uiScale, 36.0f * uiScale, [&](float y) {
-                drawText("Special Game Mods", drawerX + padX, y + 16.0f * uiScale, 0.40f * uiScale, rgba(0.92f, 0.94f, 0.98f, 1.0f), 0);
-                drawText("Cheats & speedrun tools", drawerX + padX, y + 32.0f * uiScale, 0.28f * uiScale, rgba(0.65f, 0.75f, 0.90f, 0.85f), 0);
+                drawText("Special Cheats & Mods", drawerX + padX, y + 16.0f * uiScale, 0.40f * uiScale, rgba(0.92f, 0.94f, 0.98f, 1.0f), 0);
+                drawText("Instant boosts & speedrun tools", drawerX + padX, y + 32.0f * uiScale, 0.28f * uiScale, rgba(0.65f, 0.75f, 0.90f, 0.85f), 0);
             });
 
             // Mod 1: Fly Mode Switch
@@ -2031,26 +2114,40 @@ void UIOverlay::render(int screenW, int screenH) {
             });
 
             // Mod 2: Cutscene Prevention Switch
-            renderRow(110.0f * uiScale, 52.0f * uiScale, [&](float y) {
+            renderRow(106.0f * uiScale, 52.0f * uiScale, [&](float y) {
                 drawText("Cutscene Prevention", drawerX + padX, y + 20.0f * uiScale, 0.40f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
                 drawText("Instantly skip video cutscenes", drawerX + padX, y + 36.0f * uiScale, 0.28f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
                 drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.modSkipCutscenes);
             });
 
             // Mod 3: Infinite Health Switch
-            renderRow(172.0f * uiScale, 52.0f * uiScale, [&](float y) {
+            renderRow(164.0f * uiScale, 52.0f * uiScale, [&](float y) {
                 drawText("Infinite Health", drawerX + padX, y + 20.0f * uiScale, 0.40f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
                 drawText("Invincible; teleports out of black holes", drawerX + padX, y + 36.0f * uiScale, 0.28f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
                 drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.modInfiniteHealth);
             });
 
+            // Mod 4: Infinite Lives Switch
+            renderRow(222.0f * uiScale, 52.0f * uiScale, [&](float y) {
+                drawText("Infinite Lives (99)", drawerX + padX, y + 20.0f * uiScale, 0.40f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+                drawText("Lock Mario's life counter to 99 lives", drawerX + padX, y + 36.0f * uiScale, 0.28f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
+                drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.modInfiniteLives);
+            });
+
+            // Mod 5: Infinite Star Bits Switch
+            renderRow(280.0f * uiScale, 52.0f * uiScale, [&](float y) {
+                drawText("Infinite Star Bits (999)", drawerX + padX, y + 20.0f * uiScale, 0.40f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+                drawText("Max out Star Bits pouch to 999", drawerX + padX, y + 36.0f * uiScale, 0.28f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
+                drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.modInfiniteStarBits);
+            });
+
             // Info Card
-            renderRow(238.0f * uiScale, 84.0f * uiScale, [&](float y) {
+            renderRow(342.0f * uiScale, 84.0f * uiScale, [&](float y) {
                 drawRoundRect(drawerX + padX, y + 6.0f * uiScale, drawerX + drawerW - padX, y + 80.0f * uiScale, 14.0f * uiScale, rgba(0.14f, 0.17f, 0.22f, 0.95f));
                 drawRoundRect(drawerX + padX, y + 6.0f * uiScale, drawerX + drawerW - padX, y + 80.0f * uiScale, 14.0f * uiScale, rgba(0.24f, 0.32f, 0.45f, 0.60f));
-                drawText("MOD STATUS", drawerX + padX + 16.0f * uiScale, y + 26.0f * uiScale, 0.32f * uiScale, rgba(0.38f, 0.74f, 0.98f, 0.95f), 0);
-                drawText("Mods take effect in real-time during gameplay.", drawerX + padX + 16.0f * uiScale, y + 44.0f * uiScale, 0.27f * uiScale, rgba(0.80f, 0.84f, 0.90f, 0.85f), 0);
-                drawText("Turn toggles ON to activate each special ability.", drawerX + padX + 16.0f * uiScale, y + 62.0f * uiScale, 0.27f * uiScale, rgba(0.80f, 0.84f, 0.90f, 0.85f), 0);
+                drawText("CHEATS STATUS", drawerX + padX + 16.0f * uiScale, y + 26.0f * uiScale, 0.32f * uiScale, rgba(0.38f, 0.74f, 0.98f, 0.95f), 0);
+                drawText("Cheats take effect in real-time during gameplay.", drawerX + padX + 16.0f * uiScale, y + 44.0f * uiScale, 0.27f * uiScale, rgba(0.80f, 0.84f, 0.90f, 0.85f), 0);
+                drawText("Toggles work seamlessly without restarting.", drawerX + padX + 16.0f * uiScale, y + 62.0f * uiScale, 0.27f * uiScale, rgba(0.80f, 0.84f, 0.90f, 0.85f), 0);
             });
         }
 
@@ -2078,7 +2175,7 @@ void UIOverlay::render(int screenW, int screenH) {
         drawCloseIcon(closeBtnX, closeBtnY, 9.0f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.95f));
 
         if (mPlusEdition) {
-            // Material 3 Tab Dock ([ General ]  [ Advanced ])
+            // Material 3 Tab Dock ([ General ]  [ Cheats & Mods ])
             float tabBoxY0 = 62.0f * uiScale;
             float tabBoxY1 = 98.0f * uiScale;
             drawRoundRect(drawerX + padX, tabBoxY0, drawerX + drawerW - padX, tabBoxY1, 18.0f * uiScale, rgba(0.149f, 0.160f, 0.190f, 0.95f));
@@ -2089,12 +2186,12 @@ void UIOverlay::render(int screenW, int screenH) {
                 // General Tab Active
                 drawRoundRect(drawerX + padX + 2.0f * uiScale, tabBoxY0 + 2.0f * uiScale, tabMidX - 2.0f * uiScale, tabBoxY1 - 2.0f * uiScale, 16.0f * uiScale, rgba(0.14f, 0.28f, 0.48f, 0.95f));
                 drawText("General", (drawerX + padX + tabMidX) * 0.5f, tabBoxY0 + 23.0f * uiScale, 0.36f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
-                drawText("Advanced", (tabMidX + drawerX + drawerW - padX) * 0.5f, tabBoxY0 + 23.0f * uiScale, 0.36f * uiScale, rgba(0.68f, 0.71f, 0.77f, 0.75f), 1);
+                drawText("Cheats & Mods", (tabMidX + drawerX + drawerW - padX) * 0.5f, tabBoxY0 + 23.0f * uiScale, 0.34f * uiScale, rgba(0.68f, 0.71f, 0.77f, 0.75f), 1);
             } else {
-                // Advanced Tab Active
+                // Cheats Tab Active
                 drawRoundRect(tabMidX + 2.0f * uiScale, tabBoxY0 + 2.0f * uiScale, drawerX + drawerW - padX - 2.0f * uiScale, tabBoxY1 - 2.0f * uiScale, 16.0f * uiScale, rgba(0.14f, 0.28f, 0.48f, 0.95f));
                 drawText("General", (drawerX + padX + tabMidX) * 0.5f, tabBoxY0 + 23.0f * uiScale, 0.36f * uiScale, rgba(0.68f, 0.71f, 0.77f, 0.75f), 1);
-                drawText("Advanced", (tabMidX + drawerX + drawerW - padX) * 0.5f, tabBoxY0 + 23.0f * uiScale, 0.36f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
+                drawText("Cheats & Mods", (tabMidX + drawerX + drawerW - padX) * 0.5f, tabBoxY0 + 23.0f * uiScale, 0.34f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
             }
 
             // Divider below tab bar

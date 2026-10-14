@@ -55,6 +55,7 @@ void GameDataPlayerStatus::initializeData() {
 }
 
 s32 GameDataPlayerStatus::getPlayerLeft() const {
+    if (port_is_infinite_lives()) return 99;
     s32 playerLeft = mPlayerLeft;
 
     return MR::clamp(playerLeft, 0, 99);

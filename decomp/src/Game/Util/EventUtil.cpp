@@ -124,6 +124,7 @@ namespace MR {
     }
 
     s32 getStarPieceNum() {
+        if (port_is_infinite_starbits()) return 999;
         if (MR::isStageAstroLocation()) {
             return GameDataFunction::getStockedStarPieceNum();
         }

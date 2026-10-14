@@ -810,9 +810,13 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
 
             eglSwapBuffers(a.display, a.surface);
 
-            // Precise frame pacer (60, 90, 120 FPS target)
+            // Precise frame pacer (60, 90, 120 FPS target, scaled by game speed)
             static int64_t lastFrameNs = 0;
             int targetFps = mobile_ui::get().settings().targetFps;
+            float speed = port_get_game_speed();
+            if (speed > 1.05f) {
+                targetFps = (int)((float)targetFps * speed);
+            }
             if (targetFps > 0) {
                 int64_t framePeriodNs = 1000000000ll / targetFps;
                 int64_t nowNs = port_host_time_ns();
@@ -882,18 +886,23 @@ int port_is_fullscreen_aspect(void) {
 }
 
 int port_is_fly_mode(void) {
-    if (!mobile_ui::UIOverlay::get().isPlusEdition()) return 0;
     return mobile_ui::UIOverlay::get().settings().modFly ? 1 : 0;
 }
 
 int port_is_skip_cutscenes(void) {
-    if (!mobile_ui::UIOverlay::get().isPlusEdition()) return 0;
     return mobile_ui::UIOverlay::get().settings().modSkipCutscenes ? 1 : 0;
 }
 
 int port_is_infinite_health(void) {
-    if (!mobile_ui::UIOverlay::get().isPlusEdition()) return 0;
     return mobile_ui::UIOverlay::get().settings().modInfiniteHealth ? 1 : 0;
+}
+
+int port_is_infinite_lives(void) {
+    return mobile_ui::UIOverlay::get().settings().modInfiniteLives ? 1 : 0;
+}
+
+int port_is_infinite_starbits(void) {
+    return mobile_ui::UIOverlay::get().settings().modInfiniteStarBits ? 1 : 0;
 }
 }
 
