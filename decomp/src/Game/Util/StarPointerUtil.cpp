@@ -971,7 +971,10 @@ namespace MR {
 };  // namespace MR
 
 extern "C" int port_is_title_screen(void) {
-    StarPointerOnOffController* ctrl = ::getStarPointerOnOffController();
+    // The mobile overlay can receive input before port_boot creates these.
+    GameSystem* system = SingletonHolder< GameSystem >::get();
+    if (!system || !system->mSequenceDirector || !system->mSequenceDirector->mGameSequenceProgress) return 1;
+    StarPointerOnOffController* ctrl = system->mSequenceDirector->mGameSequenceProgress->mStarPointerOnOffController;
     if (!ctrl) return 1;
     s32 mode = ctrl->mMode;
     return (mode == StarPointerMode_Title || mode == StarPointerMode_Logo);

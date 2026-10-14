@@ -59,7 +59,9 @@ struct MobileApp {
     int vpX = 0, vpY = 0, vpW = 0, vpH = 0;
 
     // Input state
-    PortPadState pad{};
+    PortPadState pad{}; // Touch controls only
+    PortPadState gamepad{}; // Physical controls survive touch updates
+    bool touchscreenDown = false;
     bool touchActive = false;
     float touchX = 0.0f, touchY = 0.0f;
 
@@ -72,6 +74,24 @@ struct MobileApp {
 };
 
 MobileApp gMobile;
+
+void publishInput(MobileApp& a) {
+    PortPadState combined = a.pad;
+    combined.buttons |= a.gamepad.buttons;
+    combined.connected = a.pad.connected || a.gamepad.connected;
+    if (a.stickPointerId < 0 && combined.stickX == 0.0f && combined.stickY == 0.0f) {
+        combined.stickX = a.gamepad.stickX;
+        combined.stickY = a.gamepad.stickY;
+    }
+    if (a.gamepad.pointerValid && !a.touchscreenDown) {
+        combined.pointerValid = 1;
+        combined.pointerX = a.gamepad.pointerX;
+        combined.pointerY = a.gamepad.pointerY;
+        combined.pointerDist = a.gamepad.pointerDist;
+    }
+    port_input_set(0, &combined);
+}
+
 
 bool isDir(const std::string& path) {
     struct stat st;
@@ -397,28 +417,28 @@ int32_t onInput(android_app* app, AInputEvent* event) {
             if (fabsf(stickX) <= kDeadzone) stickX = 0.0f;
             if (fabsf(stickY) <= kDeadzone) stickY = 0.0f;
 
-            a->pad.connected = 1;
-            a->pad.stickX = stickX;
-            a->pad.stickY = -stickY; // Invert Y for Wii/GameCube convention
+            a->gamepad.connected = 1;
+            a->gamepad.stickX = stickX;
+            a->gamepad.stickY = -stickY; // Invert Y for Wii/GameCube convention
 
             // D-Pad Hat axes (Standard on Xbox, PlayStation, 8BitDo, and HID pads)
             float hatX = AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_HAT_X, 0);
             float hatY = AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_HAT_Y, 0);
-            if (hatX < -0.5f) { a->pad.buttons |= 0x0001; a->pad.buttons &= ~0x0002; }
-            else if (hatX > 0.5f) { a->pad.buttons |= 0x0002; a->pad.buttons &= ~0x0001; }
-            else { a->pad.buttons &= ~0x0003; }
+            if (hatX < -0.5f) { a->gamepad.buttons |= 0x0001; a->gamepad.buttons &= ~0x0002; }
+            else if (hatX > 0.5f) { a->gamepad.buttons |= 0x0002; a->gamepad.buttons &= ~0x0001; }
+            else { a->gamepad.buttons &= ~0x0003; }
 
-            if (hatY < -0.5f) { a->pad.buttons |= 0x0008; a->pad.buttons &= ~0x0004; }
-            else if (hatY > 0.5f) { a->pad.buttons |= 0x0004; a->pad.buttons &= ~0x0008; }
-            else { a->pad.buttons &= ~0x000C; }
+            if (hatY < -0.5f) { a->gamepad.buttons |= 0x0008; a->gamepad.buttons &= ~0x0004; }
+            else if (hatY > 0.5f) { a->gamepad.buttons |= 0x0004; a->gamepad.buttons &= ~0x0008; }
+            else { a->gamepad.buttons &= ~0x000C; }
 
             // Analog Triggers (L2 / R2)
             float lTrig = std::max(AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_LTRIGGER, 0),
                                    AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_BRAKE, 0));
             float rTrig = std::max(AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_RTRIGGER, 0),
                                    AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_GAS, 0));
-            if (lTrig > 0.4f) a->pad.buttons |= 0x2000; // Z button (Crouch / Ground Pound)
-            else a->pad.buttons &= ~0x2000;
+            if (lTrig > 0.4f) a->gamepad.buttons |= 0x2000; // Z button (Crouch / Ground Pound)
+            else a->gamepad.buttons &= ~0x2000;
 
             if (rTrig > 0.4f) a->spinFrames = 6; // Spin shake
 
@@ -430,16 +450,20 @@ int32_t onInput(android_app* app, AInputEvent* event) {
                 rightY = AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_RY, 0);
             }
             if (fabsf(rightX) > 0.18f || fabsf(rightY) > 0.18f) {
-                a->pad.pointerValid = 1;
-                a->pad.pointerX = rightX;
-                a->pad.pointerY = -rightY;
-                a->pad.pointerDist = 2.0f;
+                a->gamepad.pointerValid = 1;
+                a->gamepad.pointerX = rightX;
+                a->gamepad.pointerY = -rightY;
+                a->gamepad.pointerDist = 2.0f;
             }
 
-            port_input_set(0, &a->pad);
+            publishInput(*a);
             return 1;
         }
 
+        int touchAction = AMotionEvent_getAction(event) & AMOTION_EVENT_ACTION_MASK;
+        if (touchAction == AMOTION_EVENT_ACTION_DOWN) a->touchscreenDown = true;
+        if (touchAction == AMOTION_EVENT_ACTION_UP || touchAction == AMOTION_EVENT_ACTION_CANCEL)
+            a->touchscreenDown = false;
         updateViewport(*a);
         int ptrX = a->vpX, ptrY = a->vpY, ptrW = a->vpW, ptrH = a->vpH;
         if (mobile_ui::get().settings().fullscreen) {
@@ -449,7 +473,7 @@ int32_t onInput(android_app* app, AInputEvent* event) {
         if (mobile_ui::get().handleInput(event, a->pad, a->spinFrames,
                                          a->screenWidth, a->screenHeight,
                                          ptrX, ptrY, ptrW, ptrH)) {
-            port_input_set(0, &a->pad);
+            publishInput(*a);
             return 1;
         }
         return 0;
@@ -471,64 +495,64 @@ int32_t onInput(android_app* app, AInputEvent* event) {
         switch (keyCode) {
         case AKEYCODE_BUTTON_A:
         case AKEYCODE_DPAD_CENTER:
-            a->pad.connected = 1;
-            if (down) a->pad.buttons |= 0x0800;  // A
-            else a->pad.buttons &= ~0x0800;
+            a->gamepad.connected = 1;
+            if (down) a->gamepad.buttons |= 0x0800;  // A
+            else a->gamepad.buttons &= ~0x0800;
             break;
         case AKEYCODE_BUTTON_B:
-            a->pad.connected = 1;
-            if (down) a->pad.buttons |= 0x0400;  // B
-            else a->pad.buttons &= ~0x0400;
+            a->gamepad.connected = 1;
+            if (down) a->gamepad.buttons |= 0x0400;  // B
+            else a->gamepad.buttons &= ~0x0400;
             break;
         case AKEYCODE_BUTTON_X:
-            a->pad.connected = 1;
+            a->gamepad.connected = 1;
             if (down) a->spinFrames = 6;  // Spin (Wiimote shake)
             break;
         case AKEYCODE_BUTTON_Y:
-            a->pad.connected = 1;
-            if (down) a->pad.buttons |= 0x1000;  // C
-            else a->pad.buttons &= ~0x1000;
+            a->gamepad.connected = 1;
+            if (down) a->gamepad.buttons |= 0x1000;  // C
+            else a->gamepad.buttons &= ~0x1000;
             break;
         case AKEYCODE_BUTTON_L1:
         case AKEYCODE_BUTTON_L2:
         case AKEYCODE_BUTTON_THUMBL:
-            a->pad.connected = 1;
-            if (down) a->pad.buttons |= 0x2000;  // Z (crouch / ground pound)
-            else a->pad.buttons &= ~0x2000;
+            a->gamepad.connected = 1;
+            if (down) a->gamepad.buttons |= 0x2000;  // Z (crouch / ground pound)
+            else a->gamepad.buttons &= ~0x2000;
             break;
         case AKEYCODE_BUTTON_R1:
         case AKEYCODE_BUTTON_R2:
         case AKEYCODE_BUTTON_THUMBR:
-            a->pad.connected = 1;
+            a->gamepad.connected = 1;
             if (down) a->spinFrames = 6;  // Spin (Wiimote shake)
             break;
         case AKEYCODE_BUTTON_START:
         case AKEYCODE_BUTTON_SELECT:
         case AKEYCODE_BUTTON_MODE:
         case AKEYCODE_MENU:
-            a->pad.connected = 1;
-            if (down) a->pad.buttons |= 0x0010;  // Plus / Pause
-            else a->pad.buttons &= ~0x0010;
+            a->gamepad.connected = 1;
+            if (down) a->gamepad.buttons |= 0x0010;  // Plus / Pause
+            else a->gamepad.buttons &= ~0x0010;
             break;
         case AKEYCODE_DPAD_UP:
-            a->pad.connected = 1;
-            if (down) a->pad.buttons |= 0x0008;
-            else a->pad.buttons &= ~0x0008;
+            a->gamepad.connected = 1;
+            if (down) a->gamepad.buttons |= 0x0008;
+            else a->gamepad.buttons &= ~0x0008;
             break;
         case AKEYCODE_DPAD_DOWN:
-            a->pad.connected = 1;
-            if (down) a->pad.buttons |= 0x0004;
-            else a->pad.buttons &= ~0x0004;
+            a->gamepad.connected = 1;
+            if (down) a->gamepad.buttons |= 0x0004;
+            else a->gamepad.buttons &= ~0x0004;
             break;
         case AKEYCODE_DPAD_LEFT:
-            a->pad.connected = 1;
-            if (down) a->pad.buttons |= 0x0001;
-            else a->pad.buttons &= ~0x0001;
+            a->gamepad.connected = 1;
+            if (down) a->gamepad.buttons |= 0x0001;
+            else a->gamepad.buttons &= ~0x0001;
             break;
         case AKEYCODE_DPAD_RIGHT:
-            a->pad.connected = 1;
-            if (down) a->pad.buttons |= 0x0002;
-            else a->pad.buttons &= ~0x0002;
+            a->gamepad.connected = 1;
+            if (down) a->gamepad.buttons |= 0x0002;
+            else a->gamepad.buttons &= ~0x0002;
             break;
         case AKEYCODE_BACK:
             if (mobile_ui::get().isSettingsOpen()) {
@@ -542,7 +566,7 @@ int32_t onInput(android_app* app, AInputEvent* event) {
             return 0;
         }
 
-        port_input_set(0, &a->pad);
+        publishInput(*a);
         return 1;
     }
 
@@ -577,6 +601,10 @@ void onAppCmd(android_app* app, int32_t cmd) {
         break;
     case APP_CMD_PAUSE:
         LOGI("APP_CMD_PAUSE");
+        a->gamepad = {};
+        a->touchscreenDown = false;
+        a->spinFrames = 0;
+        publishInput(*a);
         port_set_paused(1);
         break;
     case APP_CMD_DESTROY:
@@ -601,13 +629,20 @@ extern "C" void port_android_vibrate(int ms) {
         }
     }
     if (env) {
-        jclass clazz = env->FindClass("com/openport/galaxyandroid/GameActivity");
+        // Native threads use the bootstrap class loader for FindClass. Resolve
+        // the actual activity instance instead, including alternate package names.
+        jclass clazz = env->GetObjectClass(gMobile.android->activity->clazz);
         if (clazz) {
             jmethodID mid = env->GetStaticMethodID(clazz, "triggerHaptic", "(I)V");
             if (mid) {
                 env->CallStaticVoidMethod(clazz, mid, (jint)ms);
             }
             env->DeleteLocalRef(clazz);
+        }
+        // Haptics are optional: never leave a pending Java exception on the game thread.
+        if (env->ExceptionCheck()) {
+            env->ExceptionClear();
+            LOGE("Haptic call failed; continuing without vibration");
         }
         if (attached) vm->DetachCurrentThread();
     }
@@ -627,7 +662,7 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
     port_mem_set_reserved_window(windowBase, windowSize);
 
     a.pad.connected = 1;
-    port_input_set(0, &a.pad);
+    publishInput(a);
 
     std::string internalPath = app->activity->internalDataPath ? app->activity->internalDataPath : "";
     bool isPlus = (internalPath.find("plus") != std::string::npos);
@@ -707,7 +742,7 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
             a.pad.accX = 0.0f;
             a.pad.accY = 0.0f;
         }
-        port_input_set(0, &a.pad);
+        publishInput(a);
 
 
         // Presentation & Render Loop
@@ -821,7 +856,10 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
 
     LOGI("GalaxyMobile exiting cleanly");
     destroySurface(a);
-    exit(0);
+    // exit() destroys process-global C++ objects while Android HWUI workers
+    // are still using them. This NativeActivity owns the process; terminate
+    // without racing their mutex/condition-variable destructors.
+    _exit(0);
 }
 
 extern "C" {
