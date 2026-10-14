@@ -20,7 +20,7 @@ This guide explains how to install and play **Galaxy Android** on your Android p
 > The cooking and extraction pipeline is based on the toolchain developed by [bigmak94/GalaxyQuest](https://github.com/bigmak94/GalaxyQuest) and the decompilation efforts of [Petari](https://github.com/SMGCommunity/Petari). Special thanks to both teams for making native ports possible.
 
 > **Legal Disclaimer:**
-> You must provide your own legally dumped copy of *Super Mario Galaxy* (USA or EUR optical disc image). This project does not distribute any proprietary Nintendo game assets, binaries, or copyrighted data.
+> You must provide your own legally dumped copy of the original optical disc image. This project does not distribute any proprietary game assets, binaries, or copyrighted data.
 
 ---
 
@@ -40,7 +40,7 @@ This guide explains how to install and play **Galaxy Android** on your Android p
 Using the companion **GalaxyInstaller** app, your phone extracts, decrypts, and converts your game disc directly on-device with zero PC required.
 
 ### Step 1: Place Your Disc Image on Your Phone
-1. Transfer or download your legally dumped Super Mario Galaxy disc into your phone's **`Download`** folder.
+1. Transfer or download your legally dumped game disc into your phone's **`Download`** folder.
 2. Supported disc formats:
    - **`.rvz`** (Modern compressed Dolphin format - recommended)
    - **`.wbfs`** (Wii Backup File System format)
@@ -80,7 +80,7 @@ If you prefer to cook game assets on your computer for faster processing:
 ### Step 2: Extract Your Game Disc with Dolphin
 Using the command-line tool in [`tools/dolphin/`](../tools/dolphin/):
 ```bash
-tools/dolphin/DolphinTool.exe extract -i "path/to/Super Mario Galaxy.rvz" -o extracted
+tools/dolphin/DolphinTool.exe extract -i "path/to/game.rvz" -o extracted
 ```
 *(This creates an `extracted/DATA` folder containing `files` and `sys`.)*
 

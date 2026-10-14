@@ -5,7 +5,7 @@ following works, used under their licenses.
 
 ## Petari
 
-`decomp/` holds the sources of Petari, the Super Mario Galaxy decompilation
+`decomp/` holds the sources of Petari, the decompilation project
 by the SMGCommunity (https://github.com/SMGCommunity/Petari), with this
 port's changes. Petari is dedicated to the public domain under CC0 1.0
 Universal: see [decomp/LICENSE-Petari.txt](decomp/LICENSE-Petari.txt).

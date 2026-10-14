@@ -57,11 +57,12 @@ package_flavor() {
 
   (cd $OUT/apk && py3 - << 'PY'
 import zipfile, os
-z = zipfile.ZipFile('../base.apk', 'a', zipfile.ZIP_DEFLATED)
+z = zipfile.ZipFile('../base.apk', 'a')
 for root, _, files in os.walk('lib'):
     for f in files:
         p = os.path.join(root, f).replace('\\', '/')
-        z.write(p, p)
+        c_type = zipfile.ZIP_STORED if f.endswith('.so') else zipfile.ZIP_DEFLATED
+        z.write(p, p, compress_type=c_type)
 z.close()
 PY
   )
@@ -78,8 +79,7 @@ PY
   echo "Successfully built $LABEL: $OUT_APK ($(wc -c < "$OUT_APK") bytes)"
 }
 
-package_flavor platform/mobile/AndroidManifest.xml "$OUT/GalaxyMobile.apk" "GalaxyMobile (Vanilla)"
-package_flavor platform/mobile/AndroidManifest_plus.xml "$OUT/GalaxyMobilePlus.apk" "GalaxyMobile+ (Mods Enabled)"
+package_flavor platform/mobile/AndroidManifest.xml "$OUT/GalaxyAndroid.apk" "GalaxyAndroid (Unified Engine)"
 
 rm -f $OUT/res.zip
 echo "All APKs generated successfully in $OUT/"

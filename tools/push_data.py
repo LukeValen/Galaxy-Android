@@ -17,8 +17,8 @@ import sys
 import tarfile
 import tempfile
 
-PACKAGE = 'com.galaxy.mobile'
-DEST = '/sdcard/Android/data/%s/files/game' % PACKAGE
+PACKAGE = 'com.openport.galaxyandroid'
+DEST = '/sdcard/GalaxyData'
 TMP = '/data/local/tmp/petari_game_data.tar'
 
 
@@ -36,6 +36,8 @@ def find_adb():
                 path = os.path.join(sdk, 'platform-tools', name)
                 if os.path.isfile(path):
                     return path
+    if os.path.isfile(r"c:\Desktop\platform-tools\adb.exe"):
+        return r"c:\Desktop\platform-tools\adb.exe"
     sys.exit('adb not found: install the Android platform-tools and put adb on PATH (or set ADB)')
 
 

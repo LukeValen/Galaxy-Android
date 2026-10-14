@@ -29,4 +29,5 @@ tools/dolphin/
 # APK output and builds
 out-mobile/
 *.apk
+tools/*.jar
 

@@ -12,15 +12,19 @@ if %ERRORLEVEL% neq 0 (
 )
 
 echo ==============================================
-echo GalaxyMobile Deployment Helper
+echo Galaxy Android Deployment Helper
 echo ==============================================
 echo.
 echo Checking for connected Android device...
 %ADB% devices
 
 echo.
-echo Installing updated GalaxyMobile.apk...
-%ADB% install --no-incremental -r "out-mobile\GalaxyMobile.apk"
+echo Installing GalaxyAndroid.apk...
+if exist "out-mobile\GalaxyAndroid.apk" (
+    %ADB% install --no-incremental -r "out-mobile\GalaxyAndroid.apk"
+) else (
+    %ADB% install --no-incremental -r "out-mobile\GalaxyMobile.apk"
+)
 if %ERRORLEVEL% neq 0 (
     echo.
     echo [ERROR] Installation failed!
@@ -34,9 +38,9 @@ if %ERRORLEVEL% neq 0 (
 )
 
 echo.
-echo Launching GalaxyMobile on device...
-%ADB% shell am start -n com.galaxy.mobile/android.app.NativeActivity
+echo Launching Galaxy Android on device...
+%ADB% shell am start -n com.openport.galaxyandroid/android.app.NativeActivity || %ADB% shell am start -n com.galaxy.mobile/android.app.NativeActivity
 echo.
-echo [SUCCESS] GalaxyMobile updated and launched!
+echo [SUCCESS] Galaxy Android launched!
 echo.
 pause

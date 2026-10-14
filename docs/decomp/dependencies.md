@@ -1,6 +1,6 @@
 ---
-title: Super Mario Galaxy Decompilation - Dependencies
-description: Host build dependencies and toolchain requirements for compiling and analyzing the Super Mario Galaxy decompilation codebase.
+title: SMG Decompilation - Dependencies
+description: Host build dependencies and toolchain requirements for compiling and analyzing the decompilation codebase.
 tags:
   - decompilation
   - dependencies

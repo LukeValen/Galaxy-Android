@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Requirements verified against Meta's docs (2026-09-28):
+  NOTE: This manifest is specifically for the Meta Quest OpenXR standalone VR flavor (GalaxyQuest VR).
+  For standard Android mobile phones and tablets, see the authoritative manifest:
+  platform/mobile/AndroidManifest.xml (Package: com.openport.galaxyandroid, Label: Galaxy Android)
+  Requirements verified against Meta's docs:
   documentation/native/android/mobile-openxr.md and resources/publish-mobile-manifest.md
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"

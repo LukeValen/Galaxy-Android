@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.openport.galaxydefinitive"
+    package="com.openport.galaxyandroid"
     android:versionCode="1"
     android:versionName="1.0.0"
     android:installLocation="auto">
@@ -17,7 +17,7 @@
 
     <!-- debuggable + extractNativeLibs: required for wrap.sh to preload libreserve.so -->
     <application
-        android:label="Galaxy Definitive"
+        android:label="Galaxy Android"
         android:icon="@mipmap/ic_launcher"
         android:banner="@drawable/banner"
         android:hasCode="false"

@@ -26,16 +26,16 @@ The on-screen overlay is engineered with a modern frosted translucent dark glass
 
 ### Touch Layout Overview
 
-| On-Screen Element | Wii Equivalent | Super Mario Galaxy Action |
+| On-Screen Element | Controller Equivalent | In-Game Action |
 |---|---|---|
-| **Analog Thumbstick** (Left) | Nunchuk Analog Stick | Mario 360° movement, swimming, rolling |
-| **A Button** (Cyan `#38BDF8`) | Wii Remote **A** | Jump, confirm in menus, talk, hold to fast-forward dialogue |
-| **SPIN Button** (Emerald `#34D399`) | Wii Remote Shake | Star Spin attack, spin jump, activate Launch Stars |
-| **B Button** (Amber `#FBBF24`) | Wii Remote **B** (Trigger) | Shoot collected Star Bits at enemies / obstacles |
-| **Z Button** (Violet `#A78BFA`) | Nunchuk **Z** Button | Crouch, ground pound (in air), long jump / backflip (with A) |
-| **Camera D-Pad** (Dial) | Wii Remote **D-Pad** | Rotate camera (Left/Right), first-person view (Up), reset view (Down) |
-| **Pause Button (+)** | Wii Remote **+** | Pause menu, galaxy star checklist, options |
-| **Screen Surface Drag** | Wii Remote IR Pointer | 1:1 direct finger aim: gather Star Bits, activate Pull Stars |
+| **Analog Thumbstick** (Left) | Analog Stick | 360° character movement, swimming, rolling |
+| **A Button** (Cyan `#38BDF8`) | Button **A** | Jump, confirm in menus, talk, hold to fast-forward dialogue |
+| **SPIN Button** (Emerald `#34D399`) | Motion Shake | Star Spin attack, spin jump, activate Launch Stars |
+| **B Button** (Amber `#FBBF24`) | Trigger **B** | Shoot collected Star Bits at enemies / obstacles |
+| **Z Button** (Violet `#A78BFA`) | Trigger **Z** | Crouch, ground pound (in air), long jump / backflip (with A) |
+| **Camera D-Pad** (Dial) | **D-Pad** | Rotate camera (Left/Right), first-person view (Up), reset view (Down) |
+| **Pause Button (+)** | **+** / Start | Pause menu, star checklist, options |
+| **Screen Surface Drag** | IR Pointer | 1:1 direct finger aim: gather Star Bits, activate Pull Stars |
 
 ---
 
@@ -50,38 +50,38 @@ The on-screen overlay is engineered with a modern frosted translucent dark glass
 ### Star Pointer & Interactive Touch Tracking
 
 - **Direct Touch Gathering:** Sweep your finger over Star Bits floating in space to pull them directly into your inventory.
-- **Pull Stars:** Touch and hold Pull Stars directly on screen to grapple Mario toward them.
-- **Star Bit Shooting:** Tap the **B** button to fire Star Bits toward Mario's facing direction, or tap-and-hold the screen with a second finger to rapid-fire directly at specific targets.
+- **Pull Stars:** Touch and hold Pull Stars directly on screen to grapple toward them.
+- **Star Bit Shooting:** Tap the **B** button to fire Star Bits toward the player's facing direction, or tap-and-hold the screen with a second finger to rapid-fire directly at specific targets.
 
 ---
 
 ### Directional Camera Dial
 
-- Replicates the Wii Remote D-Pad camera controls:
-  - **Left / Right Chevrons (◀ ▶):** Orbit the camera 45° around Mario.
-  - **Top Chevron (▲):** Switch to Mario's first-person perspective.
-  - **Bottom Chevron (▼):** Recenter the camera behind Mario.
-  - **Center Camera Shutter Hub:** Snaps camera orientation directly behind Mario.
+- Replicates controller D-Pad camera controls:
+  - **Left / Right Chevrons (◀ ▶):** Orbit the camera 45° around the player.
+  - **Top Chevron (▲):** Switch to first-person perspective.
+  - **Bottom Chevron (▼):** Recenter the camera behind the player.
+  - **Center Camera Shutter Hub:** Snaps camera orientation directly behind the player.
 - Fully toggleable in settings (can be placed on either the left or right side).
 
 ---
 
 ## 2. Physical Gamepads (Bluetooth & USB)
 
-Galaxy Android automatically detects physical gamepads connected via Bluetooth or USB-C (including Xbox Wireless, PlayStation DualShock 4 / DualSense, Nintendo Switch Pro Controller, Razer Kishi, and Backbone One).
+Galaxy Android automatically detects physical gamepads connected via Bluetooth or USB-C (including Xbox Wireless, PlayStation DualShock 4 / DualSense, Switch Pro Controller, Razer Kishi, and Backbone One).
 
 ### Standard Gamepad Mapping
 
-| Gamepad Input | Wii Remote / Nunchuk | In-Game Action |
+| Gamepad Input | Controller Signal | In-Game Action |
 |---|---|---|
-| **Left Analog Stick** | Nunchuk Stick | Mario 360° Movement |
-| **Right Analog Stick** | Wii Remote Pointer | Analog Star Pointer aiming |
-| **A / Cross (✕)** | Wii Remote **A** | Jump, talk, confirm |
-| **X / Square (□)** | Wii Remote Shake | Star Spin attack |
-| **Right Trigger (RT / R2)** | Wii Remote **B** | Shoot Star Bits |
-| **Left Trigger (LT / L2)** | Nunchuk **Z** | Crouch, ground pound, long jump |
-| **Left Bumper (LB / L1)** | Nunchuk **C** | Recenter camera behind Mario |
-| **Right Bumper (RB / R1)** | Wii Remote Shake | Spin attack (alternative) |
+| **Left Analog Stick** | Analog Stick | 360° Movement |
+| **Right Analog Stick** | Pointer Aim | Analog Star Pointer aiming |
+| **A / Cross (✕)** | Button **A** | Jump, talk, confirm |
+| **X / Square (□)** | Shake / Motion | Star Spin attack |
+| **Right Trigger (RT / R2)** | Trigger **B** | Shoot Star Bits |
+| **Left Trigger (LT / L2)** | Trigger **Z** | Crouch, ground pound, long jump |
+| **Left Bumper (LB / L1)** | Recenter | Recenter camera behind player |
+| **Right Bumper (RB / R1)** | Shake / Motion | Spin attack (alternative) |
 | **D-Pad (Left / Right)** | Wii Remote D-Pad (L/R) | Rotate camera |
 | **D-Pad Up** | Wii Remote D-Pad Up | First-person view |
 | **D-Pad Down** | Wii Remote D-Pad Down | Recenter camera / Page down |
@@ -114,5 +114,5 @@ Open the slide-out **Material 3 Settings Drawer** by tapping the gear icon (`⚙
 
 - [Technical Documentation](TECHNICAL.md) - Architecture of the native port
 - [Installation Guide](INSTALLATION.md) - How to install and play
-- [Petari Repository](https://github.com/SMGCommunity/Petari) - Super Mario Galaxy decompilation
+- [Petari Repository](https://github.com/SMGCommunity/Petari) - Decompilation research project
 - [GalaxyQuest Repository](https://github.com/bigmak94/GalaxyQuest) - Standalone port architecture

@@ -55,12 +55,13 @@ jobs:
             -DANDROID_PLATFORM=android-30 \
             -DTARGET_MOBILE=ON \
             -DCMAKE_BUILD_TYPE=Release
-          ninja -C build-mobile game
+          ninja -C build-mobile game main reserve
 
       - name: Package Galaxy Android APK
         run: |
           mkdir -p out-mobile
-          ./package_mobile_apk.sh || python3 package_mobile_apk.py
+          export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          bash package_mobile_apk.sh || python3 package_mobile_apk.py
 
       - name: Upload APK Artifacts
         uses: actions/upload-artifact@v4
@@ -99,17 +100,17 @@ jobs:
           body: |
             ### Galaxy Android ${{ steps.vars.outputs.TAG_NAME }}
             
-            **100% Native ARM64 Android Port of Super Mario Galaxy**
+            **100% Native ARM64 Android Port**
             
             #### Features
             - **Native Hor+ Ultrawide rendering** (OpenGL ES 3.2, zero emulation overhead)
             - **Frosted glass minimalist on-screen touch controls** with dynamic joystick & laser tether
             - **1:1 direct finger tracking** for Star Pointer & Star Bit gathering
             - **Plug-and-play Bluetooth & USB gamepad support** (Xbox, PlayStation, Switch Pro, Kishi, Backbone)
-            - **100% PC-Less on-device installer** (`GalaxyInstaller.apk`)
+            - **Unified standalone installer & engine**
             
             #### How to Install
-            1. Download `GalaxyInstaller.apk` and `GalaxyMobile.apk` (or `GalaxyMobilePlus.apk` for mods).
+            1. Download `GalaxyAndroid.apk`.
             2. Follow the [Installation Guide](https://github.com/OpenPort-Labs/Galaxy-Android/blob/main/docs/INSTALLATION.md).
             
-            *Legal Notice: You must provide your own legally dumped Wii disc image. No proprietary Nintendo assets are included.*
+            *Legal Notice: You must provide your own legally dumped optical disc image. No proprietary assets are included.*

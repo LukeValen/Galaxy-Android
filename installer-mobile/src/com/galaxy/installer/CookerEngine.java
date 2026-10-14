@@ -31,28 +31,58 @@ public class CookerEngine {
     public static native boolean isWiiDisc(String filePath);
     public static native int extractDisc(String imagePath, String outDir, boolean includeMovies, CookerCallback callback);
 
+    private static final int MAX_ZIP_ENTRIES = 50000;
+    private static final long MAX_ZIP_BYTES = 10L * 1024 * 1024 * 1024; // 10 GB limit
+
     public static boolean extractZip(File zipFile, File outDir, CookerCallback callback) {
         if (callback != null) callback.onLog("[Extractor] Unpacking ZIP archive: " + zipFile.getName() + "...");
         byte[] buffer = new byte[65536];
+        File root = null;
+        String rootPath = null;
+        try {
+            root = outDir.getCanonicalFile();
+            rootPath = root.getPath() + File.separator;
+        } catch (Exception e) {
+            Log.e(TAG, "Cannot resolve canonical path for output directory: " + outDir, e);
+            if (callback != null) callback.onLog("[Error] Invalid destination directory: " + e.getMessage());
+            return false;
+        }
+
         try (InputStream is = new java.io.FileInputStream(zipFile);
              ZipInputStream zis = new ZipInputStream(is)) {
             ZipEntry entry;
             int count = 0;
+            long totalBytes = 0;
             while ((entry = zis.getNextEntry()) != null) {
-                File outFile = new File(outDir, entry.getName());
+                count++;
+                if (count > MAX_ZIP_ENTRIES) {
+                    throw new java.io.IOException("ZIP archive exceeds maximum allowed file count (" + MAX_ZIP_ENTRIES + ")");
+                }
+
+                File outFile = new File(root, entry.getName()).getCanonicalFile();
+                if (!outFile.getPath().startsWith(rootPath) && !outFile.equals(root)) {
+                    throw new java.io.IOException("ZIP entry escapes extraction directory (path traversal blocked): " + entry.getName());
+                }
+
                 if (entry.isDirectory()) {
                     outFile.mkdirs();
                 } else {
-                    outFile.getParentFile().mkdirs();
+                    File parent = outFile.getParentFile();
+                    if (parent != null && !parent.exists()) {
+                        parent.mkdirs();
+                    }
                     try (FileOutputStream fos = new FileOutputStream(outFile)) {
                         int len;
                         while ((len = zis.read(buffer)) > 0) {
+                            totalBytes += len;
+                            if (totalBytes > MAX_ZIP_BYTES) {
+                                throw new java.io.IOException("ZIP archive exceeds maximum allowed extracted size (10 GB)");
+                            }
                             fos.write(buffer, 0, len);
                         }
                     }
                 }
                 zis.closeEntry();
-                count++;
                 if (count % 100 == 0 && callback != null) {
                     callback.onProgress(-1, "Unpacked " + count + " files...");
                 }
@@ -149,16 +179,24 @@ public class CookerEngine {
             if (callback != null) callback.onLog("[Setup] Unpacking embedded Python standard library (ARM64)...");
             deleteRecursive(pythonHomeDir);
             pythonHomeDir.mkdirs();
+            File pythonHomeCanonical = pythonHomeDir.getCanonicalFile();
+            String pythonHomePrefix = pythonHomeCanonical.getPath() + File.separator;
             try (InputStream is = context.getAssets().open("pythonhome.zip");
                  ZipInputStream zis = new ZipInputStream(is)) {
                 ZipEntry entry;
                 byte[] buffer = new byte[8192];
                 while ((entry = zis.getNextEntry()) != null) {
-                    File outFile = new File(pythonHomeDir, entry.getName());
+                    File outFile = new File(pythonHomeCanonical, entry.getName()).getCanonicalFile();
+                    if (!outFile.getPath().startsWith(pythonHomePrefix) && !outFile.equals(pythonHomeCanonical)) {
+                        throw new java.io.IOException("ZIP entry escapes target directory: " + entry.getName());
+                    }
                     if (entry.isDirectory()) {
                         outFile.mkdirs();
                     } else {
-                        outFile.getParentFile().mkdirs();
+                        File parent = outFile.getParentFile();
+                        if (parent != null && !parent.exists()) {
+                            parent.mkdirs();
+                        }
                         try (FileOutputStream fos = new FileOutputStream(outFile)) {
                             int len;
                             while ((len = zis.read(buffer)) > 0) {

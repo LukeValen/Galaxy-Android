@@ -1,6 +1,6 @@
 ---
-title: Super Mario Galaxy Decompilation - Getting Started
-description: Guide for setting up and understanding the Super Mario Galaxy reverse-engineering and decompilation toolchain.
+title: SMG Decompilation - Getting Started
+description: Guide for setting up and understanding the reverse-engineering and decompilation toolchain.
 tags:
   - decompilation
   - petari
@@ -10,7 +10,7 @@ tags:
   - splits
 ---
 
-# Super Mario Galaxy Decompilation: Getting Started
+# SMG Decompilation: Getting Started
 
 > **Acknowledgements:**
 > This reference documentation is preserved directly from the [Petari Decompilation Project](https://github.com/SMGCommunity/Petari). All credit belongs to the SMGCommunity reverse-engineering team.

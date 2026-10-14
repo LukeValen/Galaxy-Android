@@ -16,7 +16,7 @@ tags:
 
 # Galaxy Android - Technical Architecture
 
-Galaxy Android is a **100% native Android ARM64 port** of *Super Mario Galaxy*. It is not an emulator; the original game logic and engine routines execute directly on the device's CPU cores using native Android APIs.
+Galaxy Android is a **100% native Android ARM64 port** of the classic 2007 gravity platformer. It is not an emulator; the original game logic and engine routines execute directly on the device's CPU cores using native Android APIs.
 
 > **Acknowledgements & Foundation:**
 > This project builds upon the foundational reverse-engineering and decompilation work of the [Petari Decompilation Project](https://github.com/SMGCommunity/Petari) and the groundbreaking standalone mobile platform architecture developed by [bigmak94/GalaxyQuest](https://github.com/bigmak94/GalaxyQuest). We express our utmost gratitude to these communities and creators.
@@ -87,7 +87,7 @@ The GameCube/Wii utilized the **GX** fixed/programmable pipeline, featuring up t
 - **Display Lists:** Geometry streams are parsed into standard OpenGL ES Vertex Buffer Objects (VBOs) and Vertex Array Objects (VAOs).
 
 ### Hor+ Dynamic Ultrawide Projection
-Original Super Mario Galaxy supported 4:3 and anamorphic 16:9 aspect ratios. On modern smartphones (19.5:9, 20:9, 21:9):
+The original game supported 4:3 and anamorphic 16:9 aspect ratios. On modern smartphones (19.5:9, 20:9, 21:9):
 - **Camera Frustum:** The 3D projection matrix is dynamically recalculated using the horizontal expansion method (Hor+). The vertical field of view remains constant, while horizontal FOV is expanded:
   $$\tan\left(\frac{\text{FOV}_h}{2}\right) = \tan\left(\frac{\text{FOV}_v}{2}\right) \times \text{Aspect Ratio}$$
 - **2D HUD Safe Zone:** All 2D interface elements (health meter, coin counters, dialogs) are projected within a centered 16:9 safe region using OpenGL scissor boxes, preserving circular geometry and preventing obstruction by camera hole punches.
