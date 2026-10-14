@@ -44,8 +44,10 @@ public:
     VkTarget createTarget(int w, int h);
     void destroyTarget(VkTarget& target);
 
-    bool update() { return false; }
-    bool render(VkTarget& target, const EyeView* eye, VkTarget* hud, HudMode hudMode) { return true; }
+    bool update();
+    bool render(VkTarget& target, const EyeView* eye, VkTarget* hud, HudMode hudMode = HudMode::Inline);
+    uint64_t frameNumber() const { return mFrameNumber; }
+    bool hasFrame() const { return mCurrentFrame != nullptr; }
     void present(const VkTarget& target, int vpX, int vpY, int vpW, int vpH);
 
     void onWindowResized(ANativeWindow* window);
@@ -81,6 +83,7 @@ private:
     VkSurfaceKHR mSurface = VK_NULL_HANDLE;
     VkSwapchainKHR mSwapchain = VK_NULL_HANDLE;
     VkFormat mSwapchainFormat = VK_FORMAT_R8G8B8A8_UNORM;
+    VkImageUsageFlags mSwapchainUsage = 0;
     VkFormat mDepthFormat = VK_FORMAT_UNDEFINED;
     std::vector<VkImage> mSwapchainImages;
     std::vector<VkImageView> mSwapchainImageViews;
@@ -98,6 +101,9 @@ private:
     // Descriptor layouts for SSBO storage buffers and UBOs
     VkDescriptorSetLayout mStorageDescLayout = VK_NULL_HANDLE;
     VkDescriptorPool mDescriptorPool = VK_NULL_HANDLE;
+
+    std::shared_ptr<const Frame> mCurrentFrame;
+    uint64_t mFrameNumber = 0;
 
     std::recursive_mutex mRenderMutex;
 };

@@ -2,7 +2,7 @@
 #include "port/port.h"
 #include "Game/Animation/XanimeCore.hpp"
 #include "Game/Camera/CameraTargetArg.hpp"
-#include "Game/Enemy/KarikariDirector.hpp"
+#include "Game/Enemy/KariKariDirector.hpp"
 #include "Game/Gravity/GravityInfo.hpp"
 #include "Game/LiveActor/Binder.hpp"
 #include "Game/LiveActor/HitSensor.hpp"

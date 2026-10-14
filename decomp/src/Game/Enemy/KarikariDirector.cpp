@@ -1,4 +1,4 @@
-#include "Game/Enemy/KarikariDirector.hpp"
+#include "Game/Enemy/KariKariDirector.hpp"
 #include "Game/Enemy/Karikari.hpp"
 #include "Game/Scene/SceneObjHolder.hpp"
 #include "Game/Util/FixedPosition.hpp"

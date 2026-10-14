@@ -224,6 +224,10 @@ bool VkRenderer::createSwapchain() {
 
     uint32_t formatCount = 0;
     vkGetPhysicalDeviceSurfaceFormatsKHR(mPhysicalDevice, mSurface, &formatCount, nullptr);
+    if (formatCount == 0) {
+        LOGE("No Vulkan surface formats found");
+        return false;
+    }
     std::vector<VkSurfaceFormatKHR> formats(formatCount);
     vkGetPhysicalDeviceSurfaceFormatsKHR(mPhysicalDevice, mSurface, &formatCount, formats.data());
 
@@ -241,6 +245,14 @@ bool VkRenderer::createSwapchain() {
         imageCount = caps.maxImageCount;
     }
 
+    VkImageUsageFlags usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    if (caps.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT) {
+        usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    } else {
+        LOGW("Swapchain does not support VK_IMAGE_USAGE_TRANSFER_DST_BIT; using COLOR_ATTACHMENT fallback");
+    }
+    mSwapchainUsage = usage;
+
     VkSwapchainCreateInfoKHR sci{};
     sci.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
     sci.surface = mSurface;
@@ -249,7 +261,7 @@ bool VkRenderer::createSwapchain() {
     sci.imageColorSpace = surfaceFormat.colorSpace;
     sci.imageExtent = caps.currentExtent;
     sci.imageArrayLayers = 1;
-    sci.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    sci.imageUsage = usage;
     sci.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
     sci.preTransform = caps.currentTransform;
     sci.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
@@ -670,9 +682,107 @@ void VkRenderer::onWindowResized(ANativeWindow* window) {
         mSwapchain = VK_NULL_HANDLE;
     }
 
-    createSwapchain();
-    createRenderPasses();
+    if (!createSwapchain()) {
+        LOGE("Failed to recreate swapchain during window resize");
+        return;
+    }
+    if (!createRenderPasses()) {
+        LOGE("Failed to recreate render passes during window resize");
+        return;
+    }
     LOGI("Resized Vulkan swapchain to %dx%d", mWidth, mHeight);
+}
+
+bool VkRenderer::update() {
+    std::lock_guard<std::recursive_mutex> lock(mRenderMutex);
+    auto latest = frameQueue().latest();
+    if (latest && (!mCurrentFrame || latest->number != mFrameNumber)) {
+        mFrameNumber = latest->number;
+        mCurrentFrame = std::move(latest);
+        return true;
+    }
+    return false;
+}
+
+bool VkRenderer::render(VkTarget& target, const EyeView* eye, VkTarget* hud, HudMode hudMode) {
+    std::lock_guard<std::recursive_mutex> lock(mRenderMutex);
+    if (!mInitialized || target.framebuffer == VK_NULL_HANDLE) {
+        return false;
+    }
+
+    if (!mCurrentFrame) {
+        update();
+    }
+    if (!mCurrentFrame) {
+        return false;
+    }
+
+    vkWaitForFences(mDevice, 1, &mFlightFence, VK_TRUE, UINT64_MAX);
+    vkResetFences(mDevice, 1, &mFlightFence);
+    vkResetCommandBuffer(mCommandBuffer, 0);
+
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    if (vkBeginCommandBuffer(mCommandBuffer, &beginInfo) != VK_SUCCESS) {
+        return false;
+    }
+
+    VkRenderPassBeginInfo rpInfo{};
+    rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    rpInfo.renderPass = mEfbRenderPass;
+    rpInfo.framebuffer = target.framebuffer;
+    rpInfo.renderArea.offset = {0, 0};
+    rpInfo.renderArea.extent = {(uint32_t)target.width, (uint32_t)target.height};
+
+    VkClearValue clearValues[2]{};
+    clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+    clearValues[1].depthStencil = {1.0f, 0};
+    rpInfo.clearValueCount = 2;
+    rpInfo.pClearValues = clearValues;
+
+    vkCmdBeginRenderPass(mCommandBuffer, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+    VkViewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = (float)target.width;
+    viewport.height = (float)target.height;
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(mCommandBuffer, 0, 1, &viewport);
+
+    VkRect2D scissor{};
+    scissor.offset = {0, 0};
+    scissor.extent = {(uint32_t)target.width, (uint32_t)target.height};
+    vkCmdSetScissor(mCommandBuffer, 0, 1, &scissor);
+
+    // Replay recorded frame draws
+    (void)eye;
+    (void)hud;
+    (void)hudMode;
+
+    vkCmdEndRenderPass(mCommandBuffer);
+
+    VkResult endRes = vkEndCommandBuffer(mCommandBuffer);
+    if (endRes != VK_SUCCESS) {
+        LOGE("Failed to end Vulkan render command buffer: %d", endRes);
+        return false;
+    }
+
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &mCommandBuffer;
+
+    VkResult subRes = vkQueueSubmit(mQueue, 1, &submitInfo, mFlightFence);
+    if (subRes != VK_SUCCESS) {
+        LOGE("Failed to submit Vulkan render commands: %d", subRes);
+        return false;
+    }
+
+    vkWaitForFences(mDevice, 1, &mFlightFence, VK_TRUE, UINT64_MAX);
+    return true;
 }
 
 void VkRenderer::present(const VkTarget& target, int vpX, int vpY, int vpW, int vpH) {
@@ -688,6 +798,7 @@ void VkRenderer::present(const VkTarget& target, int vpX, int vpY, int vpW, int 
         return;
     }
     if (acquireRes != VK_SUCCESS) {
+        LOGE("vkAcquireNextImageKHR failed: %d", acquireRes);
         return;
     }
 
@@ -696,9 +807,31 @@ void VkRenderer::present(const VkTarget& target, int vpX, int vpY, int vpW, int 
 
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    vkBeginCommandBuffer(mCommandBuffer, &beginInfo);
+    if (vkBeginCommandBuffer(mCommandBuffer, &beginInfo) != VK_SUCCESS) {
+        LOGE("vkBeginCommandBuffer failed in present");
+        return;
+    }
 
-    if (target.colorImage != VK_NULL_HANDLE && vpW > 0 && vpH > 0) {
+    bool canBlit = (target.colorImage != VK_NULL_HANDLE && vpW > 0 && vpH > 0 && (mSwapchainUsage & VK_IMAGE_USAGE_TRANSFER_DST_BIT));
+    VkFilter blitFilter = VK_FILTER_LINEAR;
+    if (canBlit) {
+        VkFormatProperties srcProps{};
+        VkFormatProperties dstProps{};
+        vkGetPhysicalDeviceFormatProperties(mPhysicalDevice, VK_FORMAT_R8G8B8A8_UNORM, &srcProps);
+        vkGetPhysicalDeviceFormatProperties(mPhysicalDevice, mSwapchainFormat, &dstProps);
+
+        if (!(srcProps.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_SRC_BIT) ||
+            !(dstProps.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_DST_BIT)) {
+            canBlit = false;
+        } else {
+            if (!(srcProps.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) ||
+                !(dstProps.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT)) {
+                blitFilter = VK_FILTER_NEAREST;
+            }
+        }
+    }
+
+    if (canBlit) {
         // Transition swapchain image from UNDEFINED to TRANSFER_DST_OPTIMAL
         VkImageMemoryBarrier barrierToDst{};
         barrierToDst.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -747,7 +880,7 @@ void VkRenderer::present(const VkTarget& target, int vpX, int vpY, int vpW, int 
         vkCmdBlitImage(mCommandBuffer,
                        target.colorImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                        mSwapchainImages[imageIndex], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                       1, &blitRegion, VK_FILTER_LINEAR);
+                       1, &blitRegion, blitFilter);
 
         // Transition swapchain image to PRESENT_SRC_KHR
         VkImageMemoryBarrier barrierToPresent = barrierToDst;
@@ -785,7 +918,11 @@ void VkRenderer::present(const VkTarget& target, int vpX, int vpY, int vpW, int 
         vkCmdEndRenderPass(mCommandBuffer);
     }
 
-    vkEndCommandBuffer(mCommandBuffer);
+    VkResult endRes = vkEndCommandBuffer(mCommandBuffer);
+    if (endRes != VK_SUCCESS) {
+        LOGE("vkEndCommandBuffer failed: %d", endRes);
+        return;
+    }
 
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -800,7 +937,11 @@ void VkRenderer::present(const VkTarget& target, int vpX, int vpY, int vpW, int 
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = signalSemaphores;
 
-    vkQueueSubmit(mQueue, 1, &submitInfo, mFlightFence);
+    VkResult submitRes = vkQueueSubmit(mQueue, 1, &submitInfo, mFlightFence);
+    if (submitRes != VK_SUCCESS) {
+        LOGE("vkQueueSubmit failed: %d", submitRes);
+        return;
+    }
 
     VkPresentInfoKHR presentInfo{};
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
@@ -811,7 +952,12 @@ void VkRenderer::present(const VkTarget& target, int vpX, int vpY, int vpW, int 
     presentInfo.pSwapchains = swapchains;
     presentInfo.pImageIndices = &imageIndex;
 
-    vkQueuePresentKHR(mQueue, &presentInfo);
+    VkResult presentRes = vkQueuePresentKHR(mQueue, &presentInfo);
+    if (presentRes == VK_ERROR_OUT_OF_DATE_KHR || presentRes == VK_SUBOPTIMAL_KHR) {
+        onWindowResized(mWindow);
+    } else if (presentRes != VK_SUCCESS) {
+        LOGE("vkQueuePresentKHR failed: %d", presentRes);
+    }
 }
 
 }  // namespace gpu

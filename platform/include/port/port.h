@@ -143,6 +143,8 @@ int port_is_fullscreen_aspect(void);
 int port_is_fly_mode(void);
 int port_is_skip_cutscenes(void);
 int port_is_infinite_health(void);
+void port_trigger_quick_save(void);
+int port_check_quick_save_request(void);
 
 // Frame-time statistics (platform/src/port/perf.cpp), logged every 10 s.
 void port_perf_frame_begin(void);      // the game thread starts a frame

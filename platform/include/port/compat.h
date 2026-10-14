@@ -180,6 +180,8 @@ int port_is_fullscreen_aspect(void);
 int port_is_fly_mode(void);
 int port_is_skip_cutscenes(void);
 int port_is_infinite_health(void);
+void port_trigger_quick_save(void);
+int port_check_quick_save_request(void);
 int64_t port_host_time_ns(void);
 void port_host_sleep_ns(int64_t ns);
 // Delivers pending interrupts (a safe point; only from the thread holding the

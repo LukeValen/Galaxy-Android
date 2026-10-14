@@ -242,6 +242,11 @@ void GameSystem::frameLoop() {
     MainLoopFramework::sManager->beginRender();
     draw();
     MainLoopFramework::sManager->endRender();
+#ifdef TARGET_PC
+    if (port_check_quick_save_request()) {
+        GameSequenceFunction::quickSaveAnywhere();
+    }
+#endif
     update();
     calcAnim();
     mObjHolder->captureIfAllowForScreenPreserver();

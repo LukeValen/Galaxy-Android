@@ -146,6 +146,17 @@ void SaveDataHandleSequence::startSaveTotalMailSize() {
     setNerve(GET_NERVE_ANON(SaveDataHandleSequenceSaveAllWithoutWindow));
 }
 
+void SaveDataHandleSequence::startQuickSaveAnywhere() {
+    if (mCurrentUserFile == nullptr) {
+        return;
+    }
+    mWorkUserFile = mCurrentUserFile;
+    mCurrentUserFile->updateLastModified();
+    mSaveDataHandler->storeUserFile(mCurrentUserFile);
+    mSaveDataHandler->storeSysConfigFile(mSysConfigFile);
+    setNerve(GET_NERVE_ANON(SaveDataHandleSequenceSaveAllWithoutWindow));
+}
+
 void SaveDataHandleSequence::startLoad(int userFileIndex, bool isPlayerMario) {
     restoreUserFile(mCurrentUserFile, userFileIndex, isPlayerMario);
 
@@ -410,6 +421,9 @@ void SaveDataHandleSequence::exeSaveAllWithoutWindow() {
         }
 
         mSaveDataHandler->storeSysConfigFile(mSysConfigFile);
+        if (mWorkUserFile != nullptr) {
+            mSaveDataHandler->storeUserFile(mWorkUserFile);
+        }
     }
 
     if (tryNoSave()) {

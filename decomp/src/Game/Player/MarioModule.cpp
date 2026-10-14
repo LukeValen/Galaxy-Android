@@ -1,6 +1,6 @@
 #include "Game/Player/MarioModule.hpp"
 #include "Game/Animation/XanimeCore.hpp"
-#include "Game/Enemy/KarikariDirector.hpp"
+#include "Game/Enemy/KariKariDirector.hpp"
 #include "Game/Map/HitInfo.hpp"
 #include "Game/Player/MarioActor.hpp"
 #include "Game/Player/MarioAnimator.hpp"

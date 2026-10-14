@@ -1,7 +1,7 @@
 #include "Game/Camera/CamKarikariEffector.hpp"
 #include "Game/Camera/CameraLocalUtil.hpp"
 #include "Game/Camera/CameraMan.hpp"
-#include "Game/Enemy/KarikariDirector.hpp"
+#include "Game/Enemy/KariKariDirector.hpp"
 #include "Game/Util/MathUtil.hpp"
 #include "Game/Util/PlayerUtil.hpp"
 #include <JSystem/JGeometry/TUtil.hpp>

@@ -1,6 +1,6 @@
 #include "Game/Player/MarioDamage.hpp"
 #include "port/port.h"
-#include "Game/Enemy/KarikariDirector.hpp"
+#include "Game/Enemy/KariKariDirector.hpp"
 #include "Game/Map/CollisionCode.hpp"
 #include "Game/Map/HitInfo.hpp"
 #include "Game/Player/Mario.hpp"

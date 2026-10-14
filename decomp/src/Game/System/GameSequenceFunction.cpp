@@ -300,4 +300,18 @@ namespace GameSequenceFunction {
             ::getSaveDataHandleSequence()->startSave(isConfirmRemind, isSaveAndQuitMsg);
         }
     }
+
+    void quickSaveAnywhere() {
+        SaveDataHandleSequence* seq = ::getSaveDataHandleSequence();
+        if (seq == nullptr || seq->isActive()) {
+            return;
+        }
+
+        GameSequenceProgress* progress = ::getGameSequenceProgress();
+        if (progress != nullptr && progress->getGalaxyCometScheduler() != nullptr) {
+            progress->getGalaxyCometScheduler()->updateStateToGameData();
+        }
+
+        seq->startQuickSaveAnywhere();
+    }
 };  // namespace GameSequenceFunction

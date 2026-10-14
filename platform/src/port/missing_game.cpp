@@ -51,4 +51,12 @@ __attribute__((weak)) int port_is_skip_cutscenes(void) { return 0; }
 __attribute__((weak)) int port_is_infinite_health(void) { return 0; }
 __attribute__((weak)) int port_input_real_a(void) { return 0; }
 __attribute__((weak)) int port_input_real_z(void) { return 0; }
+
+static int sQuickSaveRequested = 0;
+__attribute__((weak)) void port_trigger_quick_save(void) {
+    __atomic_store_n(&sQuickSaveRequested, 1, __ATOMIC_RELEASE);
+}
+__attribute__((weak)) int port_check_quick_save_request(void) {
+    return __atomic_exchange_n(&sQuickSaveRequested, 0, __ATOMIC_ACQ_REL);
+}
 }

@@ -31,6 +31,7 @@ public:
     void startSaveBackup(bool, bool);
     void startSaveAll();
     void startSaveTotalMailSize();
+    void startQuickSaveAnywhere();
     void startLoad(int, bool);
     void storeMiiOrIconId(int, const void*, const u32*);
     void storeCopyUserFile(int, int);

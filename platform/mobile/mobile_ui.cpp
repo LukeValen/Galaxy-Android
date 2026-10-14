@@ -332,6 +332,13 @@ void UIOverlay::closeSettings() {
     }
 }
 
+void UIOverlay::triggerSaveAnywhere() {
+    port_trigger_quick_save();
+    mSaveToastTimer = 2.5f;
+    mDirty = true;
+    LOGI("Save anywhere requested and triggered from Mobile UI");
+}
+
 bool UIOverlay::init() {
     if (mInitialized) return true;
 
@@ -486,6 +493,13 @@ void UIOverlay::update(PortPadState& pad, int& spinFrames) {
     pad.pointerX = mPointerX;
     pad.pointerY = mPointerY;
     pad.pointerDist = 2.0f;
+
+    // Toast Timer Tick
+    if (mSaveToastTimer > 0.0f) {
+        mSaveToastTimer -= 0.016f;
+        if (mSaveToastTimer < 0.0f) mSaveToastTimer = 0.0f;
+        mDirty = true;
+    }
 
     // 2. Hardware and Performance Monitoring Metrics (FPS, Frame Time, CPU, RAM)
     struct timespec ts;
@@ -725,16 +739,20 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
 
                     if (mSettingsTab == 0 || !mPlusEdition) {
                         // General Tab items
-                        // Row 0: Visibility Switch
-                        if (contentRelY >= 0.0f && contentRelY <= 48.0f * uiScale) {
+                        // Row 0: Quick Save Anywhere Action Button
+                        if (contentRelY >= 0.0f && contentRelY <= 52.0f * uiScale) {
+                            triggerSaveAnywhere();
+                        }
+                        // Row 1: Visibility Switch
+                        else if (contentRelY >= 54.0f * uiScale && contentRelY <= 102.0f * uiScale) {
                             mSettings.showControls = !mSettings.showControls;
                         }
-                        // Row 1: Camera D-Pad Switch
-                        else if (contentRelY >= 50.0f * uiScale && contentRelY <= 98.0f * uiScale) {
+                        // Row 2: Camera D-Pad Switch
+                        else if (contentRelY >= 104.0f * uiScale && contentRelY <= 152.0f * uiScale) {
                             mSettings.showDpad = !mSettings.showDpad;
                         }
-                        // Row 2: D-Pad Position Segmented
-                        else if (contentRelY >= 104.0f * uiScale && contentRelY <= 156.0f * uiScale) {
+                        // Row 3: D-Pad Position Segmented
+                        else if (contentRelY >= 156.0f * uiScale && contentRelY <= 208.0f * uiScale) {
                             float midX = drawerX + padX + contentW * 0.5f;
                             if (px < midX) {
                                 mSettings.dpadOnRight = false;
@@ -746,38 +764,39 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                                 mSettings.dpadOffsetY = 0.0f;
                             }
                         }
-                        // Row 3: Fullscreen Switch
-                        else if (contentRelY >= 160.0f * uiScale && contentRelY <= 208.0f * uiScale) {
+                        // Row 4: Fullscreen Switch
+                        else if (contentRelY >= 212.0f * uiScale && contentRelY <= 260.0f * uiScale) {
                             mSettings.fullscreen = !mSettings.fullscreen;
                         }
-                        // Row 4: Full Touch Mode Switch
-                        else if (contentRelY >= 210.0f * uiScale && contentRelY <= 258.0f * uiScale) {
+                        // Row 5: Full Touch Mode Switch
+                        else if (contentRelY >= 262.0f * uiScale && contentRelY <= 310.0f * uiScale) {
                             mSettings.fullTouchMode = !mSettings.fullTouchMode;
                         }
-                        // Row 5: Joystick Mode Segmented
-                        else if (contentRelY >= 262.0f * uiScale && contentRelY <= 316.0f * uiScale) {
+                        // Row 6: Joystick Mode Segmented
+                        else if (contentRelY >= 314.0f * uiScale && contentRelY <= 368.0f * uiScale) {
                             float midX = drawerX + padX + contentW * 0.5f;
                             if (px < midX) mSettings.dynamicStick = true;
                             else mSettings.dynamicStick = false;
                         }
-                        // Row 6: Controls Opacity Segmented
-                        else if (contentRelY >= 320.0f * uiScale && contentRelY <= 374.0f * uiScale) {
+                        // Row 7: Controls Opacity Segmented
+                        else if (contentRelY >= 372.0f * uiScale && contentRelY <= 426.0f * uiScale) {
                             float segW = contentW / 4.0f;
                             int idx = (int)((px - (drawerX + padX)) / segW);
                             if (idx <= 0) mSettings.opacity = 0.25f;
                             else if (idx == 1) mSettings.opacity = 0.50f;
                             else if (idx == 2) mSettings.opacity = 0.75f;
                             else mSettings.opacity = 1.00f;
-                        }// Row 7: Button Size Segmented
-                        else if (contentRelY >= 378.0f * uiScale && contentRelY <= 432.0f * uiScale) {
+                        }
+                        // Row 8: Button Size Segmented
+                        else if (contentRelY >= 430.0f * uiScale && contentRelY <= 484.0f * uiScale) {
                             float segW = contentW / 3.0f;
                             int idx = (int)((px - (drawerX + padX)) / segW);
                             if (idx <= 0) mSettings.scale = 0.85f;
                             else if (idx == 1) mSettings.scale = 1.00f;
                             else mSettings.scale = 1.25f;
                         }
-                        // Row 8: Layout Reposition / Reset
-                        else if (contentRelY >= 436.0f * uiScale && contentRelY <= 492.0f * uiScale) {
+                        // Row 9: Layout Reposition / Reset
+                        else if (contentRelY >= 488.0f * uiScale && contentRelY <= 544.0f * uiScale) {
                             float splitX = drawerX + padX + contentW * 0.56f;
                             if (px < splitX) {
                                 mSettingsOpen = false;
@@ -791,30 +810,30 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                                 mSettings.dpadOffsetY = 0.0f;
                             }
                         }
-                        // Row 9: View System Logs
-                        else if (contentRelY >= 496.0f * uiScale && contentRelY <= 548.0f * uiScale) {
+                        // Row 10: View System Logs
+                        else if (contentRelY >= 548.0f * uiScale && contentRelY <= 600.0f * uiScale) {
                             mSettingsOpen = false;
                             mLogViewerOpen = true;
                             mDirty = true;
                         }
-                        // Row 10: Hardware Monitor HUD
-                        else if (contentRelY >= 550.0f * uiScale && contentRelY < 608.0f * uiScale) {
+                        // Row 11: Hardware Monitor HUD
+                        else if (contentRelY >= 602.0f * uiScale && contentRelY < 660.0f * uiScale) {
                             float segW = contentW / 3.0f;
                             int idx = (int)((px - (drawerX + padX)) / segW);
                             if (idx <= 0) mSettings.perfHudMode = 0; // Off
                             else if (idx == 1) mSettings.perfHudMode = 1; // FPS
                             else mSettings.perfHudMode = 2; // Full Stats
                         }
-                        // Row 11: Target Frame Rate
-                        else if (contentRelY >= 608.0f * uiScale && contentRelY < 666.0f * uiScale) {
+                        // Row 12: Target Frame Rate
+                        else if (contentRelY >= 660.0f * uiScale && contentRelY < 718.0f * uiScale) {
                             float segW = contentW / 3.0f;
                             int idx = (int)((px - (drawerX + padX)) / segW);
                             if (idx <= 0) mSettings.targetFps = 60;
                             else if (idx == 1) mSettings.targetFps = 90;
                             else mSettings.targetFps = 120;
                         }
-                        // Row 12: Graphics Backend
-                        else if (contentRelY >= 666.0f * uiScale && contentRelY < 724.0f * uiScale) {
+                        // Row 13: Graphics Backend
+                        else if (contentRelY >= 718.0f * uiScale && contentRelY < 776.0f * uiScale) {
                             float midX = drawerX + padX + contentW * 0.5f;
                             if (px < midX) mSettings.graphicsBackend = 0; // OpenGL ES 3.2
                             else mSettings.graphicsBackend = 1; // Vulkan 1.1
@@ -1748,7 +1767,7 @@ void UIOverlay::render(int screenW, int screenH) {
         float contentW = drawerW - padX * 2.0f;
         float contentTop = mPlusEdition ? (112.0f * uiScale) : (68.0f * uiScale);
         float contentBottom = h - 56.0f * uiScale;
-        float totalContentH = (mSettingsTab == 0 || !mPlusEdition) ? (800.0f * uiScale) : (340.0f * uiScale);
+        float totalContentH = (mSettingsTab == 0 || !mPlusEdition) ? (860.0f * uiScale) : (340.0f * uiScale);
         float maxScroll = std::max(0.0f, totalContentH - (contentBottom - contentTop));
 
         // Smooth scroll damping
@@ -1775,66 +1794,77 @@ void UIOverlay::render(int screenW, int screenH) {
                 }
             };
 
-            // Row 0: Visibility Switch
-            renderRow(8.0f * uiScale, 46.0f * uiScale, [&](float y) {
+            // Row 0: Quick Save Anywhere Action Button
+            renderRow(8.0f * uiScale, 48.0f * uiScale, [&](float y) {
+                float btnY = y + 4.0f * uiScale;
+                float bX0 = drawerX + padX;
+                float bX1 = drawerX + drawerW - padX;
+                drawRoundRect(bX0, btnY, bX1, btnY + 40.0f * uiScale, 14.0f * uiScale, rgba(0.06f, 0.42f, 0.32f, 0.95f));
+                drawRoundRect(bX0, btnY, bX1, btnY + 40.0f * uiScale, 14.0f * uiScale, rgba(0.25f, 0.85f, 0.65f, 0.60f));
+                drawCircle(bX0 + 24.0f * uiScale, btnY + 20.0f * uiScale, 6.0f * uiScale, rgba(0.35f, 0.98f, 0.75f, 1.0f));
+                drawText("QUICK SAVE ANYWHERE", (bX0 + bX1) * 0.5f + 8.0f * uiScale, btnY + 26.0f * uiScale, 0.38f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
+            });
+
+            // Row 1: Visibility Switch
+            renderRow(62.0f * uiScale, 46.0f * uiScale, [&](float y) {
                 drawText("On-Screen Controls", drawerX + padX, y + 20.0f * uiScale, 0.40f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
                 drawText("Show HUD buttons", drawerX + padX, y + 36.0f * uiScale, 0.29f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
                 drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.showControls);
             });
 
-            // Row 1: Camera D-Pad Switch
-            renderRow(58.0f * uiScale, 46.0f * uiScale, [&](float y) {
+            // Row 2: Camera D-Pad Switch
+            renderRow(112.0f * uiScale, 46.0f * uiScale, [&](float y) {
                 drawText("Camera D-Pad", drawerX + padX, y + 20.0f * uiScale, 0.40f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
                 drawText("Limited camera rotation & reset", drawerX + padX, y + 36.0f * uiScale, 0.29f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
                 drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.showDpad);
             });
 
-            // Row 2: D-Pad Position Segmented Button
-            renderRow(108.0f * uiScale, 54.0f * uiScale, [&](float y) {
+            // Row 3: D-Pad Position Segmented Button
+            renderRow(162.0f * uiScale, 54.0f * uiScale, [&](float y) {
                 drawText("D-Pad Position", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
                 const char* dpadSideOpts[2] = {"Left Side", "Right Side"};
                 drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, dpadSideOpts, 2, mSettings.dpadOnRight ? 1 : 0);
             });
 
-            // Row 3: Fullscreen Switch
-            renderRow(166.0f * uiScale, 46.0f * uiScale, [&](float y) {
+            // Row 4: Fullscreen Switch
+            renderRow(220.0f * uiScale, 46.0f * uiScale, [&](float y) {
                 drawText("Fullscreen", drawerX + padX, y + 20.0f * uiScale, 0.40f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
                 drawText("Native ultrawide (expand Hor+ FOV)", drawerX + padX, y + 36.0f * uiScale, 0.29f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
                 drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.fullscreen);
             });
 
-            // Row 4: Full Touch Mode Switch
-            renderRow(216.0f * uiScale, 46.0f * uiScale, [&](float y) {
+            // Row 5: Full Touch Mode Switch
+            renderRow(270.0f * uiScale, 46.0f * uiScale, [&](float y) {
                 drawText("Full Touch Mode", drawerX + padX, y + 20.0f * uiScale, 0.40f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
                 drawText("Tap to jump/advance, flick to spin", drawerX + padX, y + 36.0f * uiScale, 0.29f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
                 drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.fullTouchMode);
             });
 
-            // Row 5: Joystick Mode Segmented Button
-            renderRow(266.0f * uiScale, 54.0f * uiScale, [&](float y) {
+            // Row 6: Joystick Mode Segmented Button
+            renderRow(320.0f * uiScale, 54.0f * uiScale, [&](float y) {
                 drawText("Joystick Mode", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
                 const char* joyOpts[2] = {"Dynamic", "Fixed"};
                 drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, joyOpts, 2, mSettings.dynamicStick ? 0 : 1);
             });
 
-            // Row 6: Controls Opacity Segmented Button
-            renderRow(324.0f * uiScale, 54.0f * uiScale, [&](float y) {
+            // Row 7: Controls Opacity Segmented Button
+            renderRow(378.0f * uiScale, 54.0f * uiScale, [&](float y) {
                 drawText("Controls Opacity", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
                 const char* opOpts[4] = {"25%", "50%", "75%", "100%"};
                 int opIdx = (fabsf(mSettings.opacity - 0.25f) < 0.12f) ? 0 : (fabsf(mSettings.opacity - 0.50f) < 0.12f) ? 1 : (fabsf(mSettings.opacity - 0.75f) < 0.12f) ? 2 : 3;
                 drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, opOpts, 4, opIdx);
             });
 
-            // Row 7: Button Size Segmented Button
-            renderRow(382.0f * uiScale, 54.0f * uiScale, [&](float y) {
+            // Row 8: Button Size Segmented Button
+            renderRow(436.0f * uiScale, 54.0f * uiScale, [&](float y) {
                 drawText("Button Size", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
                 const char* scOpts[3] = {"Small", "Medium", "Large"};
                 int scIdx = (fabsf(mSettings.scale - 0.85f) < 0.08f) ? 0 : (fabsf(mSettings.scale - 1.25f) < 0.08f) ? 2 : 1;
                 drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, scOpts, 3, scIdx);
             });
 
-            // Row 8: Layout Reposition & Reset Buttons
-            renderRow(440.0f * uiScale, 54.0f * uiScale, [&](float y) {
+            // Row 9: Layout Reposition & Reset Buttons
+            renderRow(494.0f * uiScale, 54.0f * uiScale, [&](float y) {
                 drawText("Controls Layout", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
                 float btnY = y + 22.0f * uiScale;
                 float b1X0 = drawerX + padX;
@@ -1847,8 +1877,8 @@ void UIOverlay::render(int screenW, int screenH) {
                 drawText("Reset", (b2X0 + b2X1) * 0.5f, btnY + 22.0f * uiScale, 0.36f * uiScale, rgba(1.0f, 0.72f, 0.72f, 1.0f), 1);
             });
 
-            // Row 9: View System Logs Button
-            renderRow(498.0f * uiScale, 48.0f * uiScale, [&](float y) {
+            // Row 10: View System Logs Button
+            renderRow(552.0f * uiScale, 48.0f * uiScale, [&](float y) {
                 float btnY = y + 8.0f * uiScale;
                 float bX0 = drawerX + padX;
                 float bX1 = drawerX + drawerW - padX;
@@ -1857,32 +1887,32 @@ void UIOverlay::render(int screenW, int screenH) {
                 drawText("View System Logs", (bX0 + bX1) * 0.5f, btnY + 23.0f * uiScale, 0.38f * uiScale, rgba(0.85f, 0.94f, 1.0f, 1.0f), 1);
             });
 
-            // Row 10: Hardware Monitor HUD Segmented Button
-            renderRow(552.0f * uiScale, 54.0f * uiScale, [&](float y) {
+            // Row 11: Hardware Monitor HUD Segmented Button
+            renderRow(606.0f * uiScale, 54.0f * uiScale, [&](float y) {
                 drawText("Hardware Monitor HUD", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
                 const char* hudOpts[3] = {"Off", "FPS", "Full Stats"};
                 int hudIdx = std::max(0, std::min(2, mSettings.perfHudMode));
                 drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, hudOpts, 3, hudIdx);
             });
 
-            // Row 11: Target Frame Rate Segmented Button
-            renderRow(610.0f * uiScale, 54.0f * uiScale, [&](float y) {
+            // Row 12: Target Frame Rate Segmented Button
+            renderRow(664.0f * uiScale, 54.0f * uiScale, [&](float y) {
                 drawText("Target Frame Rate", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
                 const char* fpsOpts[3] = {"60 FPS", "90 FPS", "120 FPS"};
                 int fpsIdx = (mSettings.targetFps >= 120) ? 2 : (mSettings.targetFps >= 90) ? 1 : 0;
                 drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, fpsOpts, 3, fpsIdx);
             });
 
-            // Row 12: Graphics Backend Segmented Button
-            renderRow(668.0f * uiScale, 54.0f * uiScale, [&](float y) {
+            // Row 13: Graphics Backend Segmented Button
+            renderRow(722.0f * uiScale, 54.0f * uiScale, [&](float y) {
                 drawText("Graphics Backend", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
                 const char* backendOpts[2] = {"OpenGL ES 3.2", "Vulkan 1.1 (Exp)"};
                 int bkIdx = (mSettings.graphicsBackend == 1) ? 1 : 0;
                 drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, backendOpts, 2, bkIdx);
             });
 
-            // Row 13: Realtime Hardware & Device Info Card
-            renderRow(726.0f * uiScale, 64.0f * uiScale, [&](float y) {
+            // Row 14: Realtime Hardware & Device Info Card
+            renderRow(780.0f * uiScale, 64.0f * uiScale, [&](float y) {
                 float cardX0 = drawerX + padX;
                 float cardX1 = drawerX + drawerW - padX;
                 float cardH = 60.0f * uiScale;
@@ -2055,6 +2085,27 @@ void UIOverlay::render(int screenW, int screenH) {
         } else {
             drawText("No system logs recorded yet.", modalX0 + 20.0f * uiScale, modalY0 + headerH + 30.0f * uiScale, 0.34f * uiScale, rgba(0.60f, 0.65f, 0.72f, 0.85f), 0);
         }
+    }
+
+    // -------------------------------------------------------------
+    // Save Anywhere Notification Toast (Floating Pill)
+    // -------------------------------------------------------------
+    if (mSaveToastTimer > 0.0f) {
+        float toastAlpha = std::min(1.0f, mSaveToastTimer * 2.0f);
+        float toastW = 320.0f * uiScale;
+        float toastH = 44.0f * uiScale;
+        float toastX = (w - toastW) * 0.5f;
+        float toastY = 56.0f * uiScale;
+
+        // Container: dark emerald frosted pill
+        drawRoundRect(toastX, toastY, toastX + toastW, toastY + toastH, 22.0f * uiScale, rgba(0.04f, 0.15f, 0.11f, 0.95f * toastAlpha));
+        drawRoundRect(toastX, toastY, toastX + toastW, toastY + toastH, 22.0f * uiScale, rgba(0.20f, 0.82f, 0.55f, 0.85f * toastAlpha));
+
+        // Green checkmark indicator circle
+        drawCircle(toastX + 24.0f * uiScale, toastY + toastH * 0.5f, 9.0f * uiScale, rgba(0.18f, 0.85f, 0.55f, toastAlpha));
+        drawCircle(toastX + 24.0f * uiScale, toastY + toastH * 0.5f, 4.0f * uiScale, rgba(1.0f, 1.0f, 1.0f, toastAlpha));
+
+        drawText("Game Progress Saved Anywhere!", toastX + 42.0f * uiScale, toastY + toastH * 0.5f + 5.0f * uiScale, 0.35f * uiScale, rgba(0.95f, 1.0f, 0.97f, toastAlpha), 0);
     }
 
     if (verts.empty()) return;

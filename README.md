@@ -6,14 +6,15 @@
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
 [![Platform: Android ARM64](https://img.shields.io/badge/Platform-Android%20ARM64-brightgreen.svg)](docs/TECHNICAL.md)
-[![Graphics: OpenGL ES 3.2](https://img.shields.io/badge/Graphics-OpenGL%20ES%203.2-orange.svg)](docs/TECHNICAL.md)
+[![Graphics: Vulkan 1.1 | GLES 3.2](https://img.shields.io/badge/Graphics-Vulkan%201.1%20%7C%20GLES%203.2-orange.svg)](docs/TECHNICAL.md)
 [![Audio: AAudio](https://img.shields.io/badge/Audio-AAudio%20Low--Latency-purple.svg)](docs/TECHNICAL.md)
+[![Release: v0.0.1](https://img.shields.io/badge/Release-v0.0.1-blue.svg)](https://github.com/OpenPort-Labs/Galaxy-Android/releases/tag/v0.0.1)
 
-**Play the classic 3D cosmic gravity platformer natively on your Android phone or tablet.**
+**Play the classic 3D cosmic gravity platformer natively on your Android phone, tablet, or handheld console.**
 
 **Galaxy Android** is a **100% native Android ARM64 port**, compiled directly from reconstructed C++ source code. Maintained by [OpenPort Labs](https://github.com/OpenPort-Labs/Galaxy-Android).
 
-It is **not an emulator**: the game code executes natively on your phone's processor using OpenGL ES 3.2 and AAudio, delivering fluid 60/120 FPS performance, low battery consumption, and zero emulation overhead.
+It is **not an emulator**: the game code executes natively on your phone's processor using Vulkan 1.1 / OpenGL ES 3.2 and AAudio, delivering fluid 60/120 FPS performance, low battery consumption, and zero emulation overhead.
 
 ---
 
@@ -30,23 +31,33 @@ We express our deepest thanks to both projects and their contributors for keepin
 
 ## Key Features
 
-### True Native Hor+ Ultrawide (No Stretch, No Zoom)
+### ⚡ Quick Save Anywhere
+- Save your game progress at any point during gameplay without returning to the Comet Observatory or waiting for a level-complete star!
+- Accessible directly from the slide-out **Settings Drawer** (`⚙` -> **⚡ Quick Save Anywhere**) with a floating animated on-screen HUD toast (`"Game Progress Saved Anywhere!"`).
+- Safely writes full user file data, star bit counts, coin tallies, comet timers, and unlocked galaxies directly to internal NAND storage.
+
+### 🌋 Next-Gen Dual Graphics Pipeline: Vulkan 1.1 & OpenGL ES 3.2
+- **Vulkan 1.1 Hardware Backend**: High-throughput Vulkan renderer with offscreen EFB color and depth/stencil target allocation, dynamic hardware depth format probing (`VK_FORMAT_D32_SFLOAT`, `VK_FORMAT_D24_UNORM`, `VK_FORMAT_D16_UNORM`), physical device blit capability queries (linear filter fallback to nearest), and swapchain resize recovery.
+- **OpenGL ES 3.2 Backend**: Highly optimized shader generator for Mali and Adreno GPUs with dynamic TEV stage compilation and indirect texture coordinate warping.
+
+### 🎮 Comprehensive Gamepad & Handheld Console Support
+- Native plug-and-play support for Bluetooth and USB gamepads (Xbox Wireless, PlayStation DualSense / DualShock 4, Switch Pro, Razer Kishi, Backbone One, etc.).
+- Manifest declarations configured with `android.hardware.touchscreen` optional (`required="false"`) and `android.hardware.gamepad` enabled, ensuring complete compatibility with Android TV, dedicated handhelds (Odin, Retroid Pocket, Logitech G Cloud), and external monitors.
+
+### 📱 Frosted Glass Minimalist Touch Controls
+- **Sleek Translucent Dark Glass Theme**: Semi-transparent frosted glass backplates with ultra-thin luminous perimeter rings and tactile depression feedback.
+- **Dynamic Luminous Laser Tether Joystick**: Vector laser line connects the stick origin to your thumb knob, providing immediate visual feedback of analog magnitude and deflection angle. Supports dynamic floating stick anchor mode.
+- **Directional Camera D-Pad**: Unibody circular navigation disc replicating the controller D-Pad for 45° camera rotation and recentering.
+- **Direct 1:1 Star Pointer Finger Tracking**: Touch and drag anywhere on screen to collect and aim star bits without accidental joystick conflicts.
+
+### 📐 True Native Hor+ Ultrawide (No Stretch, No Zoom)
 - Dynamically adapts the 3D camera projection to modern mobile aspect ratios (such as 19.5:9, 20:9, and foldable aspect ratios).
 - Horizontally expands field of view (Hor+) so you see more of the cosmos around the player without vertical cropping.
 - Keeps 2D HUD elements (health meter, coin counters, star bit count, dialogs) centered in a 16:9 safe zone so circular UI elements remain perfect circles and are never obscured by camera hole-punch cutouts or rounded screen corners.
 
-### Frosted Glass Minimalist Touch Controls
-- **Sleek Translucent Dark Glass Theme**: Semi-transparent frosted glass backplates with ultra-thin luminous perimeter rings and tactile depression feedback.
-- **Dynamic Luminous Laser Tether Joystick**: Vector laser line connects the stick origin to your thumb knob, providing immediate visual feedback of analog magnitude and deflection angle. Supports dynamic floating stick anchor mode.
-- **Directional Camera D-Pad**: Unibody circular navigation disc replicating the controller D-Pad for 45° camera rotation and recentering.
-- **Direct 1:1 Star Pointer Finger Tracking**: Touch and drag anywhere on screen to collect and aim star bits.
-
-### Physical Gamepad Support
-- Full plug-and-play support for Bluetooth and USB gamepads (Xbox Wireless, PlayStation DualShock 4 / DualSense, Switch Pro, Razer Kishi, Backbone One, etc.). See [Controls Guide](docs/CONTROLS.md) for full mappings.
-
-### Google Material 3 Settings Drawer
+### ⚙ Google Material 3 Settings Drawer
 - Slide-out drawer docked cleanly on the top-left edge of the screen (`⚙`).
-- Native Hor+ Ultrawide toggle, button opacity, button scaling, joystick modes, and drag-and-drop touch layout editor.
+- Native Hor+ Ultrawide toggle, button opacity, button scaling, joystick modes, drag-and-drop touch layout editor, and **Quick Save Anywhere**.
 - Built-in gameplay options and accessibility settings.
 
 ### Cinematic Cutscenes & Low-Latency Audio

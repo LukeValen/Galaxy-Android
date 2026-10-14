@@ -77,20 +77,26 @@ Galaxy Android uses a two-stage preloading strategy to guarantee that `0x8000000
 
 ---
 
-## 3. Graphics Subsystem: GX to OpenGL ES 3.2
+## 3. Dual Graphics Subsystem: Vulkan 1.1 & OpenGL ES 3.2
 
-The GameCube/Wii utilized the **GX** fixed/programmable pipeline, featuring up to 16 Texture Environment (TEV) stages, indirect texturing, alpha testing, and custom display list formats.
+The GameCube/Wii utilized the **GX** fixed/programmable pipeline, featuring up to 16 Texture Environment (TEV) stages, indirect texturing, alpha testing, and custom display list formats. Galaxy Android supports dual rendering backends:
 
-### Translation Architecture
+### OpenGL ES 3.2 Backend
 - **Shader Generation:** TEV stages are dynamically compiled into modern GLSL ES 3.2 fragment shaders. Color/alpha blending registers (`c0`, `c1`, `c2`, `prev`) map to vector registers in the shader.
 - **Indirect Texturing:** Wii matrix-driven coordinate warping (used extensively for water surfaces, heat haze, and star fields) is translated into dependent texture lookups in GLSL.
 - **Display Lists:** Geometry streams are parsed into standard OpenGL ES Vertex Buffer Objects (VBOs) and Vertex Array Objects (VAOs).
+
+### Vulkan 1.1 Hardware Backend
+- **Offscreen EFB Framebuffers:** Offscreen color (`VK_FORMAT_R8G8B8A8_UNORM`) and depth/stencil attachments allocated with `VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT`.
+- **Dynamic Depth Probing:** Runtime querying of supported physical device optimal tiling features to select `VK_FORMAT_D32_SFLOAT_S8_UINT`, `VK_FORMAT_D24_UNORM_S8_UINT`, or `VK_FORMAT_D16_UNORM`.
+- **Presentation Blit Pipeline:** Features a high-speed blit pipeline (`vkCmdBlitImage`) from EFB render targets to swapchain images. Supported blit features and linear vs nearest filtering capabilities are validated at runtime via `vkGetPhysicalDeviceFormatProperties` with automatic fallback to clear passes.
+- **Lifecycle & Swapchain Resilience:** Dynamic handling of `VK_ERROR_OUT_OF_DATE_KHR` and `VK_SUBOPTIMAL_KHR` with complete synchronization teardown and rebuild during screen rotation, folding, or multi-window splits.
 
 ### Hor+ Dynamic Ultrawide Projection
 The original game supported 4:3 and anamorphic 16:9 aspect ratios. On modern smartphones (19.5:9, 20:9, 21:9):
 - **Camera Frustum:** The 3D projection matrix is dynamically recalculated using the horizontal expansion method (Hor+). The vertical field of view remains constant, while horizontal FOV is expanded:
   $$\tan\left(\frac{\text{FOV}_h}{2}\right) = \tan\left(\frac{\text{FOV}_v}{2}\right) \times \text{Aspect Ratio}$$
-- **2D HUD Safe Zone:** All 2D interface elements (health meter, coin counters, dialogs) are projected within a centered 16:9 safe region using OpenGL scissor boxes, preserving circular geometry and preventing obstruction by camera hole punches.
+- **2D HUD Safe Zone:** All 2D interface elements (health meter, coin counters, dialogs) are projected within a centered 16:9 safe region using OpenGL/Vulkan scissor boxes, preserving circular geometry and preventing obstruction by camera hole punches.
 
 ---
 

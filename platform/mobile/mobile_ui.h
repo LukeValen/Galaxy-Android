@@ -60,6 +60,7 @@ public:
     bool needsRedraw();
     bool isSettingsOpen() const { return mSettingsOpen || mDrawerAnim > 0.01f; }
     void closeSettings();
+    void triggerSaveAnywhere();
     Settings& settings() { return mSettings; }
     void setPlusEdition(bool plus) { mPlusEdition = plus; }
     bool isPlusEdition() const { return mPlusEdition; }
@@ -167,6 +168,9 @@ private:
     // In-Game Log Viewer State
     bool mLogViewerOpen = false;
     float mLogScrollY = 0.0f;
+
+    // Save Anywhere Notification Toast Timer
+    float mSaveToastTimer = 0.0f;
 
     // GL resources
     unsigned int mProg = 0;

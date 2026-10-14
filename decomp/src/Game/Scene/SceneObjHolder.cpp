@@ -12,7 +12,7 @@
 #include "Game/Enemy/BegomanBase.hpp"
 #include "Game/Enemy/KabokuriFireHolder.hpp"
 #include "Game/Enemy/KameckBeamHolder.hpp"
-#include "Game/Enemy/KarikariDirector.hpp"
+#include "Game/Enemy/KariKariDirector.hpp"
 #include "Game/Enemy/TakoHeiInkHolder.hpp"
 #include "Game/GameAudio/AudBgmConductor.hpp"
 #include "Game/GameAudio/AudCameraWatcher.hpp"
