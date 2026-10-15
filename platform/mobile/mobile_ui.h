@@ -35,6 +35,12 @@ struct Settings {
     // In-game Language (0 = Auto, 1 = English, 2 = Spanish, 3 = French, 4 = German, 5 = Italian)
     int languageChoice = 0;
 
+    // Render Resolution Scale (0 = 480p Native, 1 = 720p HD, 2 = 1080p FHD, 3 = 1440p 2K)
+    int renderScale = 2;
+
+    // Haptic feedback (off by default)
+    bool haptics = false;
+
     // FPS configuration
     int targetFps = 60;  // 60, 90, or 120
     bool adaptiveFps = true;
@@ -56,6 +62,9 @@ public:
 
     // Per-frame tick to handle pulse buttons, auto-release, and hardware metrics
     void update(PortPadState& pad, int& spinFrames);
+
+    // Current active buttons pressed on touchscreen
+    uint32_t getTouchButtons() const;
 
     // Processes an Android motion or key event.
     // Returns true if consumed (e.g., settings menu or virtual controls).

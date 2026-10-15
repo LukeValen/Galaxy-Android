@@ -289,6 +289,8 @@ void Settings::load(const std::string& path) {
             else if (!strcmp(key, "mod_infinite_starbits")) modInfiniteStarBits = (val > 0.5f);
             else if (!strcmp(key, "game_speed")) gameSpeed = std::max(1, std::min(5, (int)val));
             else if (!strcmp(key, "language_choice")) languageChoice = std::max(0, std::min(5, (int)val));
+            else if (!strcmp(key, "render_scale")) renderScale = std::max(0, std::min(3, (int)val));
+            else if (!strcmp(key, "haptics")) haptics = (val > 0.5f);
             else if (!strcmp(key, "target_fps")) targetFps = (int)val;  // 60, 90, or 120
             else if (!strcmp(key, "adaptive_fps")) adaptiveFps = (val > 0.5f);
             else if (!strcmp(key, "full_touch_mode")) fullTouchMode = (val > 0.5f);
@@ -296,8 +298,8 @@ void Settings::load(const std::string& path) {
         }
     }
     fclose(f);
-    LOGI("Loaded settings: show=%d, full=%d, touch=%d, hud=%d, op=%.2f, scale=%.2f, dpad=%d, fly=%d, skip=%d, infHp=%d, infLives=%d, infBits=%d, spd=%d, lang=%d",
-         showControls, fullscreen, fullTouchMode, perfHudMode, opacity, scale, showDpad, modFly, modSkipCutscenes, modInfiniteHealth, modInfiniteLives, modInfiniteStarBits, gameSpeed, languageChoice);
+    LOGI("Loaded settings: show=%d, full=%d, touch=%d, hud=%d, op=%.2f, scale=%.2f, dpad=%d, fly=%d, skip=%d, infHp=%d, infLives=%d, infBits=%d, spd=%d, lang=%d, res=%d, hap=%d",
+         showControls, fullscreen, fullTouchMode, perfHudMode, opacity, scale, showDpad, modFly, modSkipCutscenes, modInfiniteHealth, modInfiniteLives, modInfiniteStarBits, gameSpeed, languageChoice, renderScale, haptics ? 1 : 0);
 }
 
 void Settings::save(const std::string& path) const {
@@ -325,6 +327,8 @@ void Settings::save(const std::string& path) const {
     fprintf(f, "mod_infinite_starbits=%d\n", modInfiniteStarBits ? 1 : 0);
     fprintf(f, "game_speed=%d\n", gameSpeed);
     fprintf(f, "language_choice=%d\n", languageChoice);
+    fprintf(f, "render_scale=%d\n", renderScale);
+    fprintf(f, "haptics=%d\n", haptics ? 1 : 0);
     fprintf(f, "target_fps=%d\n", targetFps);
     fprintf(f, "adaptive_fps=%d\n", adaptiveFps ? 1 : 0);
     fclose(f);
@@ -368,7 +372,7 @@ void UIOverlay::closeSettings() {
 
 void UIOverlay::triggerSaveAnywhere() {
     port_trigger_quick_save();
-    port_android_vibrate(50);
+    if (mSettings.haptics) port_android_vibrate(50);
     showToast("Game Progress Saved Anywhere!");
     LOGI("Save anywhere requested and triggered from Mobile UI");
 }
@@ -469,49 +473,31 @@ bool UIOverlay::init() {
     return true;
 }
 
+uint32_t UIOverlay::getTouchButtons() const {
+    uint32_t b = 0;
+    if (mFingerDownOnA || mTapPendingFrames > 0) b |= 0x0800;
+    if (mFingerDownOnB || (mTapPendingFrames > 0 && port_is_title_screen())) b |= 0x0400;
+    if (mFingerDownOnZ) b |= 0x2000;
+    if (mFingerDownOnPlus) b |= 0x0010;
+    if (mBtnDpadLeft) b |= 0x0001;
+    if (mBtnDpadRight) b |= 0x0002;
+    if (mBtnDpadDown) b |= 0x0004;
+    if (mBtnDpadUp) b |= 0x0008;
+    return b;
+}
+
 void UIOverlay::update(PortPadState& pad, int& spinFrames) {
     // 1. Decay virtual tap pulse for full-touch controls (Title screen only)
     if (mTapDelayFrames > 0) {
         mTapDelayFrames--;
-        pad.buttons &= ~0x0800;
-        mBtnAPressed = false;
     } else if (mTapPendingFrames > 0) {
         mTapPendingFrames--;
-        bool isTitle = (port_is_title_screen() != 0);
-        if (isTitle) {
-            pad.buttons |= 0x0C00; // WPAD_BUTTON_A | WPAD_BUTTON_B for title screen
-            mBtnBPressed = true;
-            mBtnAPressed = true;
-        } else {
-            pad.buttons |= 0x0800;
-            mBtnAPressed = true;
-        }
     }
 
-    // Direct button states controlled exclusively by active touches
-    if (mFingerDownOnA) {
-        pad.buttons |= 0x0800; // WPAD_BUTTON_A
-        mBtnAPressed = true;
-    } else if (mTapPendingFrames <= 0) {
-        pad.buttons &= ~0x0800;
-        mBtnAPressed = false;
-    }
-
-    if (mFingerDownOnB) {
-        pad.buttons |= 0x0400; // WPAD_BUTTON_B
-        mBtnBPressed = true;
-    } else if (mTapPendingFrames <= 0) {
-        pad.buttons &= ~0x0400;
-        mBtnBPressed = false;
-    }
-
-    if (mFingerDownOnZ) {
-        pad.buttons |= 0x2000; // WPAD_BUTTON_Z
-        mBtnZPressed = true;
-    } else {
-        pad.buttons &= ~0x2000;
-        mBtnZPressed = false;
-    }
+    // Direct button visual press states (without clearing physical controller bits)
+    mBtnAPressed = mFingerDownOnA || (mTapPendingFrames > 0);
+    mBtnBPressed = mFingerDownOnB || (mTapPendingFrames > 0 && port_is_title_screen());
+    mBtnZPressed = mFingerDownOnZ;
 
     if (mFingerDownOnSpin) {
         spinFrames = 6;
@@ -520,13 +506,7 @@ void UIOverlay::update(PortPadState& pad, int& spinFrames) {
         mBtnSpinPressed = false;
     }
 
-    if (mFingerDownOnPlus) {
-        pad.buttons |= 0x0010; // WPAD_BUTTON_PLUS
-        mBtnPlusPressed = true;
-    } else {
-        pad.buttons &= ~0x0010;
-        mBtnPlusPressed = false;
-    }
+    mBtnPlusPressed = mFingerDownOnPlus;
 
     // Always maintain valid pointer position
     pad.pointerValid = 1;
@@ -942,8 +922,22 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                                       mSettings.languageChoice == 3 ? "Language: Français" :
                                       mSettings.languageChoice == 4 ? "Language: Deutsch" : "Language: Italiano");
                         }
-                        // Row 17: Return to Setup / Launcher Button
-                        else if (contentRelY >= 962.0f * uiScale && contentRelY < 1030.0f * uiScale) {
+                        // Row 16: Render Resolution
+                        else if (contentRelY >= 892.0f * uiScale && contentRelY < 950.0f * uiScale) {
+                            float segW = contentW / 4.0f;
+                            int idx = (int)((px - (drawerX + padX)) / segW);
+                            mSettings.renderScale = std::max(0, std::min(3, idx));
+                            showToast(mSettings.renderScale == 0 ? "Resolution: 480p (Max Performance)" :
+                                      mSettings.renderScale == 1 ? "Resolution: 720p (HD Balanced)" :
+                                      mSettings.renderScale == 2 ? "Resolution: 1080p (Full HD)" : "Resolution: 1440p (2K Ultra)");
+                        }
+                        // Row 17: Vibration Haptics
+                        else if (contentRelY >= 950.0f * uiScale && contentRelY < 1004.0f * uiScale) {
+                            mSettings.haptics = !mSettings.haptics;
+                            showToast(mSettings.haptics ? "Vibration Haptics: ON" : "Vibration Haptics: OFF");
+                        }
+                        // Row 19: Return to Setup / Launcher Button
+                        else if (contentRelY >= 1076.0f * uiScale && contentRelY < 1140.0f * uiScale) {
                             mSettingsOpen = false;
                             port_android_exit_to_launcher();
                             return true;
@@ -1352,31 +1346,31 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
         }
         else if (role == TouchRole::BTN_A) {
             touchButtons |= 0x0800; // WPAD_BUTTON_A
-            if (!mBtnAPressed) port_android_vibrate(22);
+            if (!mBtnAPressed && mSettings.haptics) port_android_vibrate(22);
             mBtnAPressed = true;
             mFingerDownOnA = true;
         }
         else if (role == TouchRole::BTN_B) {
             touchButtons |= 0x0400; // WPAD_BUTTON_B
-            if (!mBtnBPressed) port_android_vibrate(18);
+            if (!mBtnBPressed && mSettings.haptics) port_android_vibrate(18);
             mBtnBPressed = true;
             mFingerDownOnB = true;
         }
         else if (role == TouchRole::BTN_Z) {
             touchButtons |= 0x2000; // WPAD_BUTTON_Z
-            if (!mBtnZPressed) port_android_vibrate(20);
+            if (!mBtnZPressed && mSettings.haptics) port_android_vibrate(20);
             mBtnZPressed = true;
             mFingerDownOnZ = true;
         }
         else if (role == TouchRole::BTN_SPIN) {
             spinFrames = 6;
-            if (!mBtnSpinPressed) port_android_vibrate(35);
+            if (!mBtnSpinPressed && mSettings.haptics) port_android_vibrate(35);
             mBtnSpinPressed = true;
             mFingerDownOnSpin = true;
         }
         else if (role == TouchRole::BTN_PLUS) {
             touchButtons |= 0x0010; // WPAD_BUTTON_PLUS
-            if (!mBtnPlusPressed) port_android_vibrate(25);
+            if (!mBtnPlusPressed && mSettings.haptics) port_android_vibrate(25);
             mBtnPlusPressed = true;
             mFingerDownOnPlus = true;
         }
@@ -1904,7 +1898,7 @@ void UIOverlay::render(int screenW, int screenH) {
         float contentW = drawerW - padX * 2.0f;
         float contentTop = mPlusEdition ? (112.0f * uiScale) : (68.0f * uiScale);
         float contentBottom = h - 56.0f * uiScale;
-        float totalContentH = (mSettingsTab == 0 || !mPlusEdition) ? (1040.0f * uiScale) : (440.0f * uiScale);
+        float totalContentH = (mSettingsTab == 0 || !mPlusEdition) ? (1160.0f * uiScale) : (440.0f * uiScale);
         float maxScroll = std::max(0.0f, totalContentH - (contentBottom - contentTop));
 
         // Smooth scroll damping
@@ -2064,8 +2058,23 @@ void UIOverlay::render(int screenW, int screenH) {
                 drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, langOpts, 6, langIdx);
             });
 
-            // Row 16: Realtime Hardware & Device Info Card
-            renderRow(892.0f * uiScale, 64.0f * uiScale, [&](float y) {
+            // Row 16: Render Resolution Segmented Button
+            renderRow(892.0f * uiScale, 54.0f * uiScale, [&](float y) {
+                drawText("Render Resolution", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+                const char* resOpts[4] = {"480p", "720p", "1080p", "1440p"};
+                int resIdx = std::max(0, std::min(3, mSettings.renderScale));
+                drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, resOpts, 4, resIdx);
+            });
+
+            // Row 17: Vibration Haptics Switch
+            renderRow(950.0f * uiScale, 46.0f * uiScale, [&](float y) {
+                drawText("Vibration Haptics", drawerX + padX, y + 20.0f * uiScale, 0.40f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+                drawText("Tactile feedback on button presses", drawerX + padX, y + 36.0f * uiScale, 0.29f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
+                drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.haptics);
+            });
+
+            // Row 18: Realtime Hardware & Device Info Card
+            renderRow(1004.0f * uiScale, 64.0f * uiScale, [&](float y) {
                 float cardX0 = drawerX + padX;
                 float cardX1 = drawerX + drawerW - padX;
                 float cardH = 60.0f * uiScale;
@@ -2074,7 +2083,8 @@ void UIOverlay::render(int screenW, int screenH) {
 
                 char gpuLine[128], resLine[128], apiLine[128];
                 snprintf(gpuLine, sizeof(gpuLine), "GPU: %s", mGpuRendererName.empty() ? "OpenGL ES 3.2" : mGpuRendererName.c_str());
-                snprintf(resLine, sizeof(resLine), "Display: %dx%d (Hor+ Ultrawide)", (int)w, (int)h);
+                const char* resStr = (mSettings.renderScale == 0) ? "480p" : (mSettings.renderScale == 1) ? "720p" : (mSettings.renderScale == 2) ? "1080p" : "1440p";
+                snprintf(resLine, sizeof(resLine), "Display: %dx%d (%s Target • Hor+)", (int)w, (int)h, resStr);
                 snprintf(apiLine, sizeof(apiLine), "Active Engine: %s • Native ARM64", (mSettings.graphicsBackend == 1) ? "Vulkan 1.1" : "OpenGL ES 3.2");
 
                 drawText(gpuLine, cardX0 + 12.0f * uiScale, y + 18.0f * uiScale, 0.28f * uiScale, rgba(0.40f, 0.75f, 1.0f, 0.95f), 0);
@@ -2082,8 +2092,8 @@ void UIOverlay::render(int screenW, int screenH) {
                 drawText(apiLine, cardX0 + 12.0f * uiScale, y + 49.0f * uiScale, 0.24f * uiScale, rgba(0.55f, 0.60f, 0.68f, 0.80f), 0);
             });
 
-            // Row 17: Return to Setup / Launcher Button
-            renderRow(962.0f * uiScale, 52.0f * uiScale, [&](float y) {
+            // Row 19: Return to Setup / Launcher Button
+            renderRow(1076.0f * uiScale, 52.0f * uiScale, [&](float y) {
                 float bX0 = drawerX + padX;
                 float bX1 = drawerX + drawerW - padX;
                 float btnY = y + 4.0f * uiScale;

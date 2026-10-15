@@ -70,6 +70,7 @@ struct MobileApp {
     float stickOriginY = 0.0f;
     int spinFrames = 0;
     bool gamepadDetected = false;
+    uint32_t physicalButtons = 0;
 };
 
 MobileApp gMobile;
@@ -338,8 +339,13 @@ bool createSurface(MobileApp& a) {
     }
 
     // Allocate offscreen target (aspect-matched when in fullscreen mode)
+    int scaleChoice = mobile_ui::get().settings().renderScale;
     int targetH = 1080;
-    if (a.screenHeight > 1080) {
+    if (scaleChoice == 0) targetH = 480;       // Native 480p (blazing fast for low-end devices)
+    else if (scaleChoice == 1) targetH = 720;  // 720p HD (great for Helio G81/G99)
+    else if (scaleChoice == 2) targetH = 1080; // 1080p FHD
+    else if (scaleChoice == 3) targetH = 1440; // 1440p 2K Ultra
+    else if (a.screenHeight > 1080) {
         targetH = std::min(a.screenHeight, 1440);
     }
     int targetW;
@@ -405,21 +411,21 @@ int32_t onInput(android_app* app, AInputEvent* event) {
             // D-Pad Hat axes (Standard on Xbox, PlayStation, 8BitDo, and HID pads)
             float hatX = AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_HAT_X, 0);
             float hatY = AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_HAT_Y, 0);
-            if (hatX < -0.5f) { a->pad.buttons |= 0x0001; a->pad.buttons &= ~0x0002; }
-            else if (hatX > 0.5f) { a->pad.buttons |= 0x0002; a->pad.buttons &= ~0x0001; }
-            else { a->pad.buttons &= ~0x0003; }
+            if (hatX < -0.5f) { a->physicalButtons |= 0x0001; a->physicalButtons &= ~0x0002; }
+            else if (hatX > 0.5f) { a->physicalButtons |= 0x0002; a->physicalButtons &= ~0x0001; }
+            else { a->physicalButtons &= ~0x0003; }
 
-            if (hatY < -0.5f) { a->pad.buttons |= 0x0008; a->pad.buttons &= ~0x0004; }
-            else if (hatY > 0.5f) { a->pad.buttons |= 0x0004; a->pad.buttons &= ~0x0008; }
-            else { a->pad.buttons &= ~0x000C; }
+            if (hatY < -0.5f) { a->physicalButtons |= 0x0008; a->physicalButtons &= ~0x0004; }
+            else if (hatY > 0.5f) { a->physicalButtons |= 0x0004; a->physicalButtons &= ~0x0008; }
+            else { a->physicalButtons &= ~0x000C; }
 
             // Analog Triggers (L2 / R2)
             float lTrig = std::max(AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_LTRIGGER, 0),
                                    AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_BRAKE, 0));
             float rTrig = std::max(AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_RTRIGGER, 0),
                                    AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_GAS, 0));
-            if (lTrig > 0.4f) a->pad.buttons |= 0x2000; // Z button (Crouch / Ground Pound)
-            else a->pad.buttons &= ~0x2000;
+            if (lTrig > 0.4f) a->physicalButtons |= 0x2000; // Z button (Crouch / Ground Pound)
+            else a->physicalButtons &= ~0x2000;
 
             if (rTrig > 0.4f) a->spinFrames = 6; // Spin shake
 
@@ -437,6 +443,7 @@ int32_t onInput(android_app* app, AInputEvent* event) {
                 a->pad.pointerDist = 2.0f;
             }
 
+            a->pad.buttons = a->physicalButtons | mobile_ui::get().getTouchButtons();
             port_input_set(0, &a->pad);
             return 1;
         }
@@ -450,6 +457,7 @@ int32_t onInput(android_app* app, AInputEvent* event) {
         if (mobile_ui::get().handleInput(event, a->pad, a->spinFrames,
                                          a->screenWidth, a->screenHeight,
                                          ptrX, ptrY, ptrW, ptrH)) {
+            a->pad.buttons = a->physicalButtons | mobile_ui::get().getTouchButtons();
             port_input_set(0, &a->pad);
             return 1;
         }
@@ -474,14 +482,14 @@ int32_t onInput(android_app* app, AInputEvent* event) {
         case AKEYCODE_BUTTON_1:
         case AKEYCODE_DPAD_CENTER:
             a->pad.connected = 1;
-            if (down) a->pad.buttons |= 0x0800;  // A
-            else a->pad.buttons &= ~0x0800;
+            if (down) a->physicalButtons |= 0x0800;  // A
+            else a->physicalButtons &= ~0x0800;
             break;
         case AKEYCODE_BUTTON_B:
         case AKEYCODE_BUTTON_2:
             a->pad.connected = 1;
-            if (down) a->pad.buttons |= 0x0400;  // B
-            else a->pad.buttons &= ~0x0400;
+            if (down) a->physicalButtons |= 0x0400;  // B
+            else a->physicalButtons &= ~0x0400;
             break;
         case AKEYCODE_BUTTON_X:
         case AKEYCODE_BUTTON_3:
@@ -491,8 +499,8 @@ int32_t onInput(android_app* app, AInputEvent* event) {
         case AKEYCODE_BUTTON_Y:
         case AKEYCODE_BUTTON_4:
             a->pad.connected = 1;
-            if (down) a->pad.buttons |= 0x1000;  // C
-            else a->pad.buttons &= ~0x1000;
+            if (down) a->physicalButtons |= 0x1000;  // C
+            else a->physicalButtons &= ~0x1000;
             break;
         case AKEYCODE_BUTTON_L1:
         case AKEYCODE_BUTTON_5:
@@ -501,8 +509,8 @@ int32_t onInput(android_app* app, AInputEvent* event) {
         case AKEYCODE_BUTTON_THUMBL:
         case AKEYCODE_BUTTON_11:
             a->pad.connected = 1;
-            if (down) a->pad.buttons |= 0x2000;  // Z (crouch / ground pound)
-            else a->pad.buttons &= ~0x2000;
+            if (down) a->physicalButtons |= 0x2000;  // Z (crouch / ground pound)
+            else a->physicalButtons &= ~0x2000;
             break;
         case AKEYCODE_BUTTON_R1:
         case AKEYCODE_BUTTON_6:
@@ -520,28 +528,28 @@ int32_t onInput(android_app* app, AInputEvent* event) {
         case AKEYCODE_BUTTON_MODE:
         case AKEYCODE_MENU:
             a->pad.connected = 1;
-            if (down) a->pad.buttons |= 0x0010;  // Plus / Pause
-            else a->pad.buttons &= ~0x0010;
+            if (down) a->physicalButtons |= 0x0010;  // Plus / Pause
+            else a->physicalButtons &= ~0x0010;
             break;
         case AKEYCODE_DPAD_UP:
             a->pad.connected = 1;
-            if (down) a->pad.buttons |= 0x0008;
-            else a->pad.buttons &= ~0x0008;
+            if (down) a->physicalButtons |= 0x0008;
+            else a->physicalButtons &= ~0x0008;
             break;
         case AKEYCODE_DPAD_DOWN:
             a->pad.connected = 1;
-            if (down) a->pad.buttons |= 0x0004;
-            else a->pad.buttons &= ~0x0004;
+            if (down) a->physicalButtons |= 0x0004;
+            else a->physicalButtons &= ~0x0004;
             break;
         case AKEYCODE_DPAD_LEFT:
             a->pad.connected = 1;
-            if (down) a->pad.buttons |= 0x0001;
-            else a->pad.buttons &= ~0x0001;
+            if (down) a->physicalButtons |= 0x0001;
+            else a->physicalButtons &= ~0x0001;
             break;
         case AKEYCODE_DPAD_RIGHT:
             a->pad.connected = 1;
-            if (down) a->pad.buttons |= 0x0002;
-            else a->pad.buttons &= ~0x0002;
+            if (down) a->physicalButtons |= 0x0002;
+            else a->physicalButtons &= ~0x0002;
             break;
         case AKEYCODE_BACK:
             if (mobile_ui::get().isSettingsOpen()) {
@@ -555,6 +563,7 @@ int32_t onInput(android_app* app, AInputEvent* event) {
             return 0;
         }
 
+        a->pad.buttons = a->physicalButtons | mobile_ui::get().getTouchButtons();
         port_input_set(0, &a->pad);
         return 1;
     }
@@ -604,49 +613,64 @@ void onAppCmd(android_app* app, int32_t cmd) {
 }  // namespace
 
 extern "C" void port_android_vibrate(int ms) {
-    if (!gMobile.android || !gMobile.android->activity || !gMobile.android->activity->vm) return;
+    if (ms <= 0) return;
+    if (!gMobile.android || !gMobile.android->activity || !gMobile.android->activity->vm || !gMobile.android->activity->clazz) return;
     JavaVM* vm = gMobile.android->activity->vm;
     JNIEnv* env = nullptr;
     bool attached = false;
-    if (vm->GetEnv((void**)&env, JNI_VERSION_1_6) != JNI_OK) {
-        if (vm->AttachCurrentThread(&env, nullptr) == JNI_OK) {
-            attached = true;
+    jint getEnvRes = vm->GetEnv((void**)&env, JNI_VERSION_1_6);
+    if (getEnvRes == JNI_EDETACHED) {
+        if (vm->AttachCurrentThread(&env, nullptr) != JNI_OK || !env) {
+            return;
         }
+        attached = true;
+    } else if (getEnvRes != JNI_OK || !env) {
+        return;
     }
-    if (env) {
-        jclass clazz = env->FindClass("com/openport/galaxyandroid/GameActivity");
-        if (clazz) {
-            jmethodID mid = env->GetStaticMethodID(clazz, "triggerHaptic", "(I)V");
-            if (mid) {
-                env->CallStaticVoidMethod(clazz, mid, (jint)ms);
-            }
-            env->DeleteLocalRef(clazz);
+
+    if (env->ExceptionCheck()) env->ExceptionClear();
+
+    jclass clazz = env->GetObjectClass(gMobile.android->activity->clazz);
+    if (clazz) {
+        jmethodID mid = env->GetStaticMethodID(clazz, "triggerHaptic", "(I)V");
+        if (mid) {
+            env->CallStaticVoidMethod(clazz, mid, (jint)ms);
         }
-        if (attached) vm->DetachCurrentThread();
+        if (env->ExceptionCheck()) env->ExceptionClear();
+        env->DeleteLocalRef(clazz);
     }
+
+    if (attached) vm->DetachCurrentThread();
 }
 
 extern "C" void port_android_exit_to_launcher() {
-    if (!gMobile.android || !gMobile.android->activity || !gMobile.android->activity->vm) return;
+    if (!gMobile.android || !gMobile.android->activity || !gMobile.android->activity->vm || !gMobile.android->activity->clazz) return;
     JavaVM* vm = gMobile.android->activity->vm;
     JNIEnv* env = nullptr;
     bool attached = false;
-    if (vm->GetEnv((void**)&env, JNI_VERSION_1_6) != JNI_OK) {
-        if (vm->AttachCurrentThread(&env, nullptr) == JNI_OK) {
-            attached = true;
+    jint getEnvRes = vm->GetEnv((void**)&env, JNI_VERSION_1_6);
+    if (getEnvRes == JNI_EDETACHED) {
+        if (vm->AttachCurrentThread(&env, nullptr) != JNI_OK || !env) {
+            return;
         }
+        attached = true;
+    } else if (getEnvRes != JNI_OK || !env) {
+        return;
     }
-    if (env) {
-        jclass clazz = env->FindClass("com/openport/galaxyandroid/GameActivity");
-        if (clazz) {
-            jmethodID mid = env->GetStaticMethodID(clazz, "returnToLauncher", "()V");
-            if (mid) {
-                env->CallStaticVoidMethod(clazz, mid);
-            }
-            env->DeleteLocalRef(clazz);
+
+    if (env->ExceptionCheck()) env->ExceptionClear();
+
+    jclass clazz = env->GetObjectClass(gMobile.android->activity->clazz);
+    if (clazz) {
+        jmethodID mid = env->GetStaticMethodID(clazz, "returnToLauncher", "()V");
+        if (mid) {
+            env->CallStaticVoidMethod(clazz, mid);
         }
-        if (attached) vm->DetachCurrentThread();
+        if (env->ExceptionCheck()) env->ExceptionClear();
+        env->DeleteLocalRef(clazz);
     }
+
+    if (attached) vm->DetachCurrentThread();
 }
 
 extern "C" __attribute__((visibility("default"))) void port_android_main(struct android_app* app, uintptr_t windowBase, size_t windowSize) {
@@ -776,9 +800,14 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
         if (newFrame) {
             gPresentedFrames.store(r.frameNumber());
 
-            // Check if offscreen target dimensions need to change (e.g. toggled fullscreen)
+            // Check if offscreen target dimensions need to change (e.g. toggled fullscreen or resolution scale)
+            int scaleChoice = mobile_ui::get().settings().renderScale;
             int desiredTargetH = 1080;
-            if (a.screenHeight > 1080) {
+            if (scaleChoice == 0) desiredTargetH = 480;       // Native 480p (max performance)
+            else if (scaleChoice == 1) desiredTargetH = 720;  // 720p HD (smooth performance on budget chips)
+            else if (scaleChoice == 2) desiredTargetH = 1080; // 1080p Full HD
+            else if (scaleChoice == 3) desiredTargetH = 1440; // 1440p 2K Ultra
+            else if (a.screenHeight > 1080) {
                 desiredTargetH = std::min(a.screenHeight, 1440);
             }
             int desiredTargetW;

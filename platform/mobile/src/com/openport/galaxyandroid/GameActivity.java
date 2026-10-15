@@ -44,7 +44,7 @@ public class GameActivity extends NativeActivity {
                             v.vibrate(ms);
                         }
                     }
-                } catch (Exception ignored) {}
+                } catch (Throwable ignored) {}
             });
         }
     }
