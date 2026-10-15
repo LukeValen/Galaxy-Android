@@ -217,13 +217,17 @@ def main():
                     arc = os.path.relpath(p, INSTALLER_DIR).replace("\\", "/")
                     z.write(p, arc, compress_type=zipfile.ZIP_DEFLATED)
 
-        # Add native libraries (store uncompressed so zipalign can page-align them)
+        # Add native libraries and wrap.sh (store uncompressed with 0755 execute permissions)
         for root, _, files in os.walk(os.path.join(apk_dir, "lib")):
             for f in files:
                 p = os.path.join(root, f)
                 arc = os.path.relpath(p, apk_dir).replace("\\", "/")
                 compress_type = zipfile.ZIP_STORED if (f.endswith(".so") or f.endswith(".sh")) else zipfile.ZIP_DEFLATED
-                z.write(p, arc, compress_type=compress_type)
+                info = zipfile.ZipInfo(arc)
+                info.compress_type = compress_type
+                info.external_attr = (0o100755 << 16) if (f.endswith(".so") or f.endswith(".sh")) else (0o100644 << 16)
+                with open(p, "rb") as f_data:
+                    z.writestr(info, f_data.read())
 
     # 6. Zipalign (16KB page alignment required for Android 14/15 Snapdragon 8 Gen 2/3 / Adreno 740/840)
     aligned_apk = os.path.join(OUT, "aligned.apk")
