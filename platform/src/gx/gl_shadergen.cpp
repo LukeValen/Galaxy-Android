@@ -648,8 +648,8 @@ std::string genFragmentShader(const ShaderUid& u) {
             }
         }
     }
-    // The TEV's output is 8 bits wide: clamp RGB and Alpha (prevent wrap-around on over-range combiner outputs like eyes/eyelids).
-    o.w("  ivec4 outi = clamp(ivec4(%s.rgb, %s.a), ivec4(0), ivec4(255));\n", kDest[lastColorDest], kDest[lastAlphaDest]);
+    // The TEV's output is 8 bits wide: clamp RGB and mask alpha (Mario's eyelids rely on 8-bit alpha wrap for test).
+    o.w("  ivec4 outi = ivec4(clamp(%s.rgb, ivec3(0), ivec3(255)), int(uint(%s.a) & 255u));\n", kDest[lastColorDest], kDest[lastAlphaDest]);
     o.w("  vec4 outc = vec4(outi) / 255.0;\n");
     // Alpha test (on the 8-bit value).
     {

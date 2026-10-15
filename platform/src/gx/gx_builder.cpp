@@ -281,76 +281,14 @@ u32 Builder::drawRecord(bool useVr, bool sky, bool pointer, bool dualTex, u32 nu
 }
 
 u32 Builder::screenTexGens(const Frame& f, const Item& it, u32 first, const ShaderUid& uid) {
-    u32 candidates = 0;
-    for (u32 i = 0; i < uid.numTexGens && i < 8; i++) {
-        u32 info = uid.texMtxInfo[i];
-        bool stq = (info >> 1) & 1, regular = ((info >> 4) & 7) == 0, fromPos = ((info >> 7) & 31) == 0;
-        if (stq && regular && fromPos) candidates |= 1u << i;
-    }
-    if (!candidates) return 0;
-
-    const u32* vx = f.verts.data() + first;
-    u32 mA = xfRegs[0x18] ? xfRegs[0x18] : 0x27921780, mB = xfRegs[0x19] ? xfRegs[0x19] : 0x00cf0b6a;
-    u32 off = 3, pidx = mA & 63;
-    if (it.flags & VF_POSMTX) pidx = vx[off++];
-    if (it.flags & VF_NRM) off += 3;
-    if (it.flags & VF_NBT) off += 6;
-    if (it.flags & VF_CLR0) off++;
-    if (it.flags & VF_CLR1) off++;
-    for (int t = 0; t < 8; t++) {
-        if (it.flags & (VF_TEX0 << t)) off += 2;
-    }
-    const u32* texmtxIdx = (it.flags & VF_TEXMTX) ? vx + off : nullptr;
-    if (pidx > 61) return 0;
-
-    const float* m = xfMem + pidx * 4;
-    float a = m[0], b = m[1], c = m[2], d = m[4], e = m[5], g = m[6], h = m[8], k = m[9], l = m[10];
-    float det = a * (e * l - g * k) - b * (d * l - g * h) + c * (d * k - e * h);
-    if (!(fabsf(det) > 1e-20f)) return 0;
-    float inv[9] = {(e * l - g * k) / det, (c * k - b * l) / det, (b * g - c * e) / det, (g * h - d * l) / det, (a * l - c * h) / det,
-                    (c * d - a * g) / det, (d * k - e * h) / det, (b * h - a * k) / det, (a * e - b * d) / det};
-    ProjState ps;
-    fillProj(ps);
-
-    static const float kView[3][3] = {{0.0f, 0.0f, -500.0f}, {120.0f, -80.0f, -1500.0f}, {-900.0f, 500.0f, -6000.0f}};
-    u32 mask = candidates;
-    for (int p = 0; p < 3 && mask; p++) {
-        const float* v = kView[p];
-        float rel[3] = {v[0] - m[3], v[1] - m[7], v[2] - m[11]};
-        float mp[4] = {inv[0] * rel[0] + inv[1] * rel[1] + inv[2] * rel[2], inv[3] * rel[0] + inv[4] * rel[1] + inv[5] * rel[2],
-                       inv[6] * rel[0] + inv[7] * rel[1] + inv[8] * rel[2], 1.0f};
-        float clip[4];
-        for (int r = 0; r < 4; r++) clip[r] = ps.proj[r][0] * v[0] + ps.proj[r][1] * v[1] + ps.proj[r][2] * v[2] + ps.proj[r][3];
-        if (!(clip[3] > 0.0f)) return 0;
-        float sx = (it.vp[0] + (clip[0] / clip[3] * 0.5f + 0.5f) * it.vp[2]) / nativeW;
-        float sy = (it.vp[1] + (0.5f - clip[1] / clip[3] * 0.5f) * it.vp[3]) / nativeH;
-        for (u32 i = 0; i < 8; i++) {
-            if (!((mask >> i) & 1)) continue;
-            u32 info = uid.texMtxInfo[i];
-            u32 midx = texmtxIdx ? (texmtxIdx[i / 4] >> ((i % 4) * 8)) & 255 : i < 4 ? (mA >> (6 * (i + 1))) & 63 : (mB >> (6 * (i - 4))) & 63;
-            float src[4] = {mp[0], mp[1], ((info >> 2) & 1) ? mp[2] : 1.0f, 1.0f};
-            float tc[3];
-            bool ok = midx <= 61;
-            for (int r = 0; ok && r < 3; r++) {
-                const float* row = xfMem + (midx + r) * 4;
-                tc[r] = row[0] * src[0] + row[1] * src[1] + row[2] * src[2] + row[3] * src[3];
-            }
-            if (ok && uid.dualTex) {
-                u32 post = xfRegs[0x50 + i];
-                if ((post >> 8) & 1) {
-                    float len = sqrtf(tc[0] * tc[0] + tc[1] * tc[1] + tc[2] * tc[2]);
-                    if (len > 0.0f) tc[0] /= len, tc[1] /= len, tc[2] /= len;
-                }
-                const float* pm = xfMem + 0x500 + (post & 63) * 4;
-                float t2[3];
-                for (int r = 0; r < 3; r++) t2[r] = pm[r * 4] * tc[0] + pm[r * 4 + 1] * tc[1] + pm[r * 4 + 2] * tc[2] + pm[r * 4 + 3];
-                memcpy(tc, t2, sizeof(tc));
-            }
-            ok = ok && fabsf(tc[2]) > 1e-6f && fabsf(tc[0] / tc[2] - sx) < 0.01f && fabsf(tc[1] / tc[2] - sy) < 0.01f;
-            if (!ok) mask &= ~(1u << i);
-        }
-    }
-    return mask;
+    // Screen-space texgen override is a VR-specific heuristic from Petari VR designed for
+    // stereoscopic HMDs where left and right eyes have custom head poses and frustums.
+    // On flat-screen rendering (mobile/desktop), overriding the GX hardware texture matrix
+    // with normalized clipPos coordinates breaks planar reflections (such as the lake in
+    // front of Peach's Castle) and transparent refractive objects, causing the reflected image
+    // to stick to the camera viewport instead of correctly transforming with the scene geometry.
+    // For flat-screen rendering, screenTexGens must return 0 so the exact GX texture matrix is evaluated.
+    return 0;
 }
 
 u32 Builder::uidFor(const ShaderUid& uid) {
@@ -638,16 +576,9 @@ void Builder::build(std::shared_ptr<const Frame> frame, Prepared& out) {
 
             if (uidDirty || flags != lastUidFlags || inHud != lastUidHud) {
                 ShaderUid uid = makeShaderUid(bp, xfRegs, flags, inHud);
-                bool perDraw = false;
-                for (u32 i = 0; i < uid.numTexGens && i < 8; i++) {
-                    u32 info = uid.texMtxInfo[i];
-                    perDraw |= ((info >> 1) & 1) && ((info >> 4) & 7) == 0 && ((info >> 7) & 31) == 0;
-                }
-                if (perDraw) {
-                    uid.screenTexGens = screenTexGens(f, it, first, uid);
-                }
+                uid.screenTexGens = 0;
                 it.uid = uidFor(uid);
-                uidDirty = perDraw;
+                uidDirty = false;
                 lastUid = it.uid;
                 lastUidFlags = flags;
                 lastUidHud = inHud;
