@@ -59,6 +59,8 @@ struct Settings {
     bool adaptiveFps = true;
     bool batterySaver = false; // 30 FPS thermal protection & power save mode
     bool gyroAiming = false;   // Gyroscope / accelerometer Star Pointer motion aiming
+    bool gyroInvertX = false;  // Invert horizontal gyro axis
+    bool gyroInvertY = false;  // Invert vertical gyro axis
 
     bool fullTouchMode = true;
     int perfHudMode = 2; // 0 = Off, 1 = FPS, 2 = Full Hardware Stats

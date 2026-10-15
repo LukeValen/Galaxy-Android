@@ -2339,7 +2339,7 @@ void VkRenderer::present(const VkTarget& target, int vpX, int vpY, int vpW, int 
 
     vkCmdBeginRenderPass(mCommandBuffer, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    if (presentSet != VK_NULL_HANDLE && mPresentPipeline != VK_NULL_HANDLE) {
+    if (hasFrame() && presentSet != VK_NULL_HANDLE && mPresentPipeline != VK_NULL_HANDLE) {
         VkViewport vp{};
         vp.x = (float)vpX;
         vp.y = (float)vpY;

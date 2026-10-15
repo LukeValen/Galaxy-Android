@@ -142,19 +142,31 @@ static void pollSensors(MobileApp& a) {
     while (ASensorEventQueue_getEvents(sSensorQueue, &event, 1) > 0) {
         if (!sSensorsActive) continue;
         if (event.type == ASENSOR_TYPE_GYROSCOPE) {
-            float pitchRate = event.vector.x;
-            float yawRate = event.vector.y;
+            // Android Landscape (ROTATION_90) coordinate conversion:
+            // - Horizontal movement (turning phone left/right): rotates around device X and Z axes
+            // - Vertical movement (tilting phone up/down): rotates around device Y axis
+            float rotH = event.vector.x - event.vector.z * 0.35f;
+            float rotV = event.vector.y;
+
+            const auto& settings = mobile_ui::UIOverlay::get().settings();
+            if (settings.gyroInvertX) rotH = -rotH;
+            if (settings.gyroInvertY) rotV = -rotV;
+
             float sens = 0.035f;
-            a.pad.pointerX += yawRate * sens;
-            a.pad.pointerY -= pitchRate * sens;
+            a.pad.pointerX += rotH * sens;
+            a.pad.pointerY -= rotV * sens;
             a.pad.pointerX = std::max(-1.0f, std::min(1.0f, a.pad.pointerX));
             a.pad.pointerY = std::max(-1.0f, std::min(1.0f, a.pad.pointerY));
             a.pad.pointerValid = 1;
             mobile_ui::UIOverlay::get().setPointerPos(a.pad.pointerX, a.pad.pointerY);
             port_input_set(0, &a.pad);
         } else if (event.type == ASENSOR_TYPE_ACCELEROMETER) {
-            float tiltX = event.acceleration.y * 0.15f;
-            float tiltY = (event.acceleration.z - 5.0f) * 0.15f;
+            // Accelerometer fallback for devices without gyroscope
+            float tiltX = -event.acceleration.y * 0.15f;
+            float tiltY = event.acceleration.x * 0.15f;
+            const auto& settings = mobile_ui::UIOverlay::get().settings();
+            if (settings.gyroInvertX) tiltX = -tiltX;
+            if (settings.gyroInvertY) tiltY = -tiltY;
             a.pad.pointerX = std::max(-1.0f, std::min(1.0f, tiltX));
             a.pad.pointerY = std::max(-1.0f, std::min(1.0f, tiltY));
             a.pad.pointerValid = 1;
@@ -1095,12 +1107,15 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
                     LOGI("Resized Vulkan target: %dx%d (fullscreen=%d)", desiredTargetW, desiredTargetH, mobile_ui::get().settings().fullscreen ? 1 : 0);
                 }
 
+                int64_t renderStartNs = port_host_time_ns();
                 // Render into offscreen target
                 vkr.render(a.vkTarget, nullptr, nullptr, gpu::HudMode::Inline);
 
                 // Present to swapchain with pillarboxing
                 updateViewport(a);
                 vkr.present(a.vkTarget, a.vpX, a.vpY, a.vpW, a.vpH);
+                int64_t renderEndNs = port_host_time_ns();
+                port_perf_render(renderEndNs - renderStartNs, 0);
 
                 // Frame pacing
                 static int64_t lastVkFrameNs = 0;
@@ -1125,14 +1140,9 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
                     lastVkFrameNs = port_host_time_ns();
                 }
             } else {
-                if (mobile_ui::get().needsRedraw() || !vkr.hasFrame()) {
-                    if (a.targetReady) {
-                        updateViewport(a);
-                        vkr.present(a.vkTarget, a.vpX, a.vpY, a.vpW, a.vpH);
-                    }
-                    if (!vkr.hasFrame()) {
-                        usleep(16000);
-                    }
+                if (mobile_ui::get().needsRedraw() && a.targetReady && vkr.hasFrame()) {
+                    updateViewport(a);
+                    vkr.present(a.vkTarget, a.vpX, a.vpY, a.vpW, a.vpH);
                 } else {
                     usleep(1000);
                 }
@@ -1178,6 +1188,7 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
                     }
                 }
 
+                int64_t renderStartNs = port_host_time_ns();
                 // Monoscopic rendering into offscreen target
                 r.render(a.efbTarget, nullptr, nullptr, gpu::HudMode::Inline);
 
@@ -1206,6 +1217,8 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
                 mobile_ui::get().render(a.screenWidth, a.screenHeight);
 
                 eglSwapBuffers(a.display, a.surface);
+                int64_t renderEndNs = port_host_time_ns();
+                port_perf_render(renderEndNs - renderStartNs, 0);
 
                 // Precise frame pacer (60, 90, 120 FPS target, scaled by game speed)
                 static int64_t lastFrameNs = 0;

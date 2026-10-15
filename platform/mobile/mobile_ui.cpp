@@ -288,14 +288,16 @@ void Settings::load(const std::string& path) {
             else if (!strcmp(key, "adaptive_fps")) adaptiveFps = (val > 0.5f);
             else if (!strcmp(key, "battery_saver")) batterySaver = (val > 0.5f);
             else if (!strcmp(key, "gyro_aiming")) gyroAiming = (val > 0.5f);
+            else if (!strcmp(key, "gyro_invert_x")) gyroInvertX = (val > 0.5f);
+            else if (!strcmp(key, "gyro_invert_y")) gyroInvertY = (val > 0.5f);
             else if (!strcmp(key, "graphics_backend")) {
                 graphicsBackend = (int)val;
             }
         }
     }
     fclose(f);
-    LOGI("Loaded settings: show=%d, full=%d, touch=%d, hud=%d, backend=%d, saver=%d, gyro=%d, op=%.2f, scale=%.2f, dpad=%d, fly=%d, skip=%d, infHp=%d, infLives=%d, infBits=%d, spd=%d, lang=%d, res=%d, hap=%d",
-         showControls, fullscreen, fullTouchMode, perfHudMode, graphicsBackend, batterySaver ? 1 : 0, gyroAiming ? 1 : 0, opacity, scale, showDpad, modFly, modSkipCutscenes, modInfiniteHealth, modInfiniteLives, modInfiniteStarBits, gameSpeed, languageChoice, renderScale, haptics ? 1 : 0);
+    LOGI("Loaded settings: show=%d, full=%d, touch=%d, hud=%d, backend=%d, saver=%d, gyro=%d, invX=%d, invY=%d, op=%.2f, scale=%.2f, dpad=%d, fly=%d, skip=%d, infHp=%d, infLives=%d, infBits=%d, spd=%d, lang=%d, res=%d, hap=%d",
+         showControls, fullscreen, fullTouchMode, perfHudMode, graphicsBackend, batterySaver ? 1 : 0, gyroAiming ? 1 : 0, gyroInvertX ? 1 : 0, gyroInvertY ? 1 : 0, opacity, scale, showDpad, modFly, modSkipCutscenes, modInfiniteHealth, modInfiniteLives, modInfiniteStarBits, gameSpeed, languageChoice, renderScale, haptics ? 1 : 0);
 }
 
 void Settings::save(const std::string& path) const {
@@ -308,6 +310,8 @@ void Settings::save(const std::string& path) const {
     fprintf(f, "graphics_backend=%d\n", graphicsBackend);
     fprintf(f, "battery_saver=%d\n", batterySaver ? 1 : 0);
     fprintf(f, "gyro_aiming=%d\n", gyroAiming ? 1 : 0);
+    fprintf(f, "gyro_invert_x=%d\n", gyroInvertX ? 1 : 0);
+    fprintf(f, "gyro_invert_y=%d\n", gyroInvertY ? 1 : 0);
     fprintf(f, "opacity=%.2f\n", opacity);
     fprintf(f, "scale=%.2f\n", scale);
     fprintf(f, "dynamic_stick=%d\n", dynamicStick ? 1 : 0);
@@ -1045,8 +1049,19 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                             mSettings.gyroAiming = !mSettings.gyroAiming;
                             showToast(mSettings.gyroAiming ? "Gyro Aiming: ON (Tilt Device to Aim)" : "Gyro Aiming: OFF");
                         }
+                        // Row 19b: Gyro Invert X / Invert Y Buttons
+                        else if (contentRelY >= 1112.0f * uiScale && contentRelY < 1162.0f * uiScale) {
+                            float midX = drawerX + padX + contentW * 0.5f;
+                            if (px < midX) {
+                                mSettings.gyroInvertX = !mSettings.gyroInvertX;
+                                showToast(mSettings.gyroInvertX ? "Gyro Invert Horizontal (X): ON" : "Gyro Invert Horizontal (X): OFF");
+                            } else {
+                                mSettings.gyroInvertY = !mSettings.gyroInvertY;
+                                showToast(mSettings.gyroInvertY ? "Gyro Invert Vertical (Y): ON" : "Gyro Invert Vertical (Y): OFF");
+                            }
+                        }
                         // Row 20: Save Backup (Export / Import)
-                        else if (contentRelY >= 1112.0f * uiScale && contentRelY < 1172.0f * uiScale) {
+                        else if (contentRelY >= 1164.0f * uiScale && contentRelY < 1224.0f * uiScale) {
                             float midX = drawerX + padX + contentW * 0.5f;
                             if (px < midX) {
                                 exportSave();
@@ -1055,7 +1070,7 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                             }
                         }
                         // Row 22: Return to Setup / Launcher Button
-                        else if (contentRelY >= 1240.0f * uiScale && contentRelY < 1315.0f * uiScale) {
+                        else if (contentRelY >= 1298.0f * uiScale && contentRelY < 1375.0f * uiScale) {
                             mSettingsOpen = false;
                             port_android_exit_to_launcher();
                             return true;
@@ -2037,7 +2052,7 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
         float contentW = drawerW - padX * 2.0f;
         float contentTop = mPlusEdition ? (112.0f * uiScale) : (68.0f * uiScale);
         float contentBottom = h - 56.0f * uiScale;
-        float totalContentH = (mSettingsTab == 0 || !mPlusEdition) ? (1160.0f * uiScale) : (580.0f * uiScale);
+        float totalContentH = (mSettingsTab == 0 || !mPlusEdition) ? (1380.0f * uiScale) : (580.0f * uiScale);
         float maxScroll = std::max(0.0f, totalContentH - (contentBottom - contentTop));
 
         // Smooth scroll damping
@@ -2226,8 +2241,24 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
                 drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.gyroAiming);
             });
 
+            // Row 19b: Gyro Invert Axes
+            renderRow(1112.0f * uiScale, 46.0f * uiScale, [&](float y) {
+                float b1X0 = drawerX + padX;
+                float b1X1 = drawerX + padX + contentW * 0.5f - 4.0f * uiScale;
+                float b2X0 = drawerX + padX + contentW * 0.5f + 4.0f * uiScale;
+                float b2X1 = drawerX + drawerW - padX;
+
+                Color c1 = mSettings.gyroInvertX ? rgba(0.043f, 0.341f, 0.816f, 0.95f) : rgba(0.18f, 0.20f, 0.25f, 0.85f);
+                Color c2 = mSettings.gyroInvertY ? rgba(0.043f, 0.341f, 0.816f, 0.95f) : rgba(0.18f, 0.20f, 0.25f, 0.85f);
+                drawRoundRect(b1X0, y + 8.0f * uiScale, b1X1, y + 38.0f * uiScale, 10.0f * uiScale, c1);
+                drawText(mSettings.gyroInvertX ? "Invert X: ON" : "Invert X: OFF", (b1X0 + b1X1) * 0.5f, y + 25.0f * uiScale, 0.32f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
+
+                drawRoundRect(b2X0, y + 8.0f * uiScale, b2X1, y + 38.0f * uiScale, 10.0f * uiScale, c2);
+                drawText(mSettings.gyroInvertY ? "Invert Y: ON" : "Invert Y: OFF", (b2X0 + b2X1) * 0.5f, y + 25.0f * uiScale, 0.32f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
+            });
+
             // Row 20: Save Data Backup (Downloads)
-            renderRow(1112.0f * uiScale, 56.0f * uiScale, [&](float y) {
+            renderRow(1164.0f * uiScale, 56.0f * uiScale, [&](float y) {
                 drawText("Save Data Backup (Downloads)", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
                 float btnY = y + 22.0f * uiScale;
                 float b1X0 = drawerX + padX;
@@ -2241,7 +2272,7 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
             });
 
             // Row 21: Realtime Hardware & Device Info Card
-            renderRow(1174.0f * uiScale, 64.0f * uiScale, [&](float y) {
+            renderRow(1226.0f * uiScale, 64.0f * uiScale, [&](float y) {
                 float cardX0 = drawerX + padX;
                 float cardX1 = drawerX + drawerW - padX;
                 float cardH = 60.0f * uiScale;
@@ -2260,7 +2291,7 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
             });
 
             // Row 22: Return to Setup / Launcher Button
-            renderRow(1244.0f * uiScale, 52.0f * uiScale, [&](float y) {
+            renderRow(1298.0f * uiScale, 52.0f * uiScale, [&](float y) {
                 float bX0 = drawerX + padX;
                 float bX1 = drawerX + drawerW - padX;
                 float btnY = y + 4.0f * uiScale;
