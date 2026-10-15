@@ -140,7 +140,7 @@ void writeWavHeader(FILE* f, u32 frames, u32 rate) {
 
 // AAudio's real-time thread: copies queued frames out, silence when there
 // are none.
-aaudio_data_callback_result_t dataCallback(AAudioStream*, void*, void* audioData, int32_t numFrames) {
+aaudio_data_callback_result_t dataCallback(AAudioStream* stream, void*, void* audioData, int32_t numFrames) {
     s16* out = (s16*)audioData;
     u32 r = sRingRead.load(std::memory_order_relaxed);
     u32 avail = sRingWrite.load(std::memory_order_acquire) - r;
@@ -154,12 +154,12 @@ aaudio_data_callback_result_t dataCallback(AAudioStream*, void*, void* audioData
         memset(out + n * 2, 0, (size_t)(numFrames - n) * 4);
         if (sPlaying && !port_is_paused()) {
             sUnderruns++;
-            if (sStream) {
-                int32_t cur = AAudioStream_getBufferSizeInFrames(sStream);
-                int32_t cap = AAudioStream_getBufferCapacityInFrames(sStream);
-                int32_t burst = AAudioStream_getFramesPerBurst(sStream);
+            if (stream) {
+                int32_t cur = AAudioStream_getBufferSizeInFrames(stream);
+                int32_t cap = AAudioStream_getBufferCapacityInFrames(stream);
+                int32_t burst = AAudioStream_getFramesPerBurst(stream);
                 if (burst > 0 && cur + burst <= cap) {
-                    AAudioStream_setBufferSizeInFrames(sStream, cur + burst);
+                    AAudioStream_setBufferSizeInFrames(stream, cur + burst);
                 }
             }
         }

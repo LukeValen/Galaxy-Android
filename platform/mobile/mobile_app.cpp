@@ -29,6 +29,7 @@
 #include "port/port.h"
 
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "PetariVR", __VA_ARGS__)
+#define LOGW(...) __android_log_print(ANDROID_LOG_WARN, "PetariVR", __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "PetariVR", __VA_ARGS__)
 
 extern "C" void port_mem_set_reserved_window(uintptr_t base, size_t size);
@@ -358,12 +359,23 @@ bool createSurface(MobileApp& a) {
         targetW = (targetH * 16) / 9;
     }
     if (!a.targetReady || a.efbTarget.width != targetW || a.efbTarget.height != targetH) {
-        if (a.targetReady) {
-            r.destroyTarget(a.efbTarget);
+        gpu::EfbTarget newTarget = r.createTarget(targetW, targetH);
+        if (newTarget.fbo == 0 && targetH > 720) {
+            LOGW("Failed to allocate %dx%d target, falling back to 720p", targetW, targetH);
+            targetH = 720;
+            targetW = mobile_ui::get().settings().fullscreen ? (int)lroundf(720.0f * ((float)a.screenWidth / (float)a.screenHeight)) : (720 * 16) / 9;
+            newTarget = r.createTarget(targetW, targetH);
         }
-        a.efbTarget = r.createTarget(targetW, targetH);
-        a.targetReady = true;
-        LOGI("Created offscreen EfbTarget: %dx%d (fullscreen=%d)", targetW, targetH, mobile_ui::get().settings().fullscreen ? 1 : 0);
+        if (newTarget.fbo != 0) {
+            if (a.targetReady) {
+                r.destroyTarget(a.efbTarget);
+            }
+            a.efbTarget = newTarget;
+            a.targetReady = true;
+            LOGI("Created offscreen EfbTarget: %dx%d (fullscreen=%d)", targetW, targetH, mobile_ui::get().settings().fullscreen ? 1 : 0);
+        } else {
+            LOGE("Critical: Failed to create offscreen EfbTarget (%dx%d)", targetW, targetH);
+        }
     }
 
     a.windowReady = true;
@@ -849,10 +861,16 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
                 desiredTargetW = (desiredTargetH * 16) / 9;
             }
             if (a.targetReady && (a.efbTarget.width != desiredTargetW || a.efbTarget.height != desiredTargetH)) {
-                r.destroyTarget(a.efbTarget);
-                a.efbTarget = r.createTarget(desiredTargetW, desiredTargetH);
-                updateViewport(a);
-                LOGI("Resized offscreen EfbTarget: %dx%d (fullscreen=%d)", desiredTargetW, desiredTargetH, mobile_ui::get().settings().fullscreen ? 1 : 0);
+                gpu::EfbTarget newTarget = r.createTarget(desiredTargetW, desiredTargetH);
+                if (newTarget.fbo != 0) {
+                    r.destroyTarget(a.efbTarget);
+                    a.efbTarget = newTarget;
+                    updateViewport(a);
+                    LOGI("Resized offscreen EfbTarget: %dx%d (fullscreen=%d)", desiredTargetW, desiredTargetH, mobile_ui::get().settings().fullscreen ? 1 : 0);
+                } else {
+                    LOGE("Failed to resize offscreen EfbTarget to %dx%d; preserving current %dx%d target",
+                         desiredTargetW, desiredTargetH, a.efbTarget.width, a.efbTarget.height);
+                }
             }
 
             // Monoscopic rendering into offscreen target

@@ -507,8 +507,8 @@ VkFormat VkRenderer::findSupportedDepthFormat() {
             return format;
         }
     }
-    LOGW("No optimal depth/stencil format found, defaulting to D16_UNORM");
-    return VK_FORMAT_D16_UNORM;
+    LOGE("No supported depth/stencil format found on this device!");
+    return VK_FORMAT_UNDEFINED;
 }
 
 uint32_t VkRenderer::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
@@ -530,6 +530,10 @@ VkTarget VkRenderer::createTarget(int w, int h) {
 
     if (mDepthFormat == VK_FORMAT_UNDEFINED) {
         mDepthFormat = findSupportedDepthFormat();
+        if (mDepthFormat == VK_FORMAT_UNDEFINED) {
+            LOGE("Cannot create VkTarget: no supported depth format");
+            return {};
+        }
     }
 
     // 1. Color attachment image (RGBA8)
@@ -718,7 +722,6 @@ bool VkRenderer::render(VkTarget& target, const EyeView* eye, VkTarget* hud, Hud
     }
 
     vkWaitForFences(mDevice, 1, &mFlightFence, VK_TRUE, UINT64_MAX);
-    vkResetFences(mDevice, 1, &mFlightFence);
     vkResetCommandBuffer(mCommandBuffer, 0);
 
     VkCommandBufferBeginInfo beginInfo{};
@@ -775,6 +778,7 @@ bool VkRenderer::render(VkTarget& target, const EyeView* eye, VkTarget* hud, Hud
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &mCommandBuffer;
 
+    vkResetFences(mDevice, 1, &mFlightFence);
     VkResult subRes = vkQueueSubmit(mQueue, 1, &submitInfo, mFlightFence);
     if (subRes != VK_SUCCESS) {
         LOGE("Failed to submit Vulkan render commands: %d", subRes);
@@ -802,7 +806,6 @@ void VkRenderer::present(const VkTarget& target, int vpX, int vpY, int vpW, int 
         return;
     }
 
-    vkResetFences(mDevice, 1, &mFlightFence);
     vkResetCommandBuffer(mCommandBuffer, 0);
 
     VkCommandBufferBeginInfo beginInfo{};
@@ -937,6 +940,7 @@ void VkRenderer::present(const VkTarget& target, int vpX, int vpY, int vpW, int 
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = signalSemaphores;
 
+    vkResetFences(mDevice, 1, &mFlightFence);
     VkResult submitRes = vkQueueSubmit(mQueue, 1, &submitInfo, mFlightFence);
     if (submitRes != VK_SUCCESS) {
         LOGE("vkQueueSubmit failed: %d", submitRes);

@@ -6,15 +6,15 @@
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
 [![Platform: Android ARM64](https://img.shields.io/badge/Platform-Android%20ARM64-brightgreen.svg)](docs/TECHNICAL.md)
-[![Graphics: Vulkan 1.1 | GLES 3.2](https://img.shields.io/badge/Graphics-Vulkan%201.1%20%7C%20GLES%203.2-orange.svg)](docs/TECHNICAL.md)
+[![Graphics: GLES 3.2 (Default) | Vulkan 1.1 (Experimental)](https://img.shields.io/badge/Graphics-GLES%203.2%20%7C%20Vulkan%201.1%20(WIP)-orange.svg)](docs/TECHNICAL.md)
 [![Audio: AAudio](https://img.shields.io/badge/Audio-AAudio%20Low--Latency-purple.svg)](docs/TECHNICAL.md)
-[![Release: v0.0.1](https://img.shields.io/badge/Release-v0.0.1-blue.svg)](https://github.com/OpenPort-Labs/Galaxy-Android/releases/tag/v0.0.1)
+[![Release: v0.0.1b](https://img.shields.io/badge/Release-v0.0.1b-blue.svg)](https://github.com/OpenPort-Labs/Galaxy-Android/releases/tag/v0.0.1b)
 
 **Play the classic 3D cosmic gravity platformer natively on your Android phone, tablet, or handheld console.**
 
 **Galaxy Android** is a **100% native Android ARM64 port**, compiled directly from reconstructed C++ source code. Maintained by [OpenPort Labs](https://github.com/OpenPort-Labs/Galaxy-Android).
 
-It is **not an emulator**: the game code executes natively on your phone's processor using Vulkan 1.1 / OpenGL ES 3.2 and AAudio, delivering fluid 60/120 FPS performance, low battery consumption, and zero emulation overhead.
+It is **not an emulator**: the game code executes natively on your phone's processor using OpenGL ES 3.2 (with experimental Vulkan 1.1) and AAudio, delivering fluid 60 FPS performance, low battery consumption, and zero emulation overhead.
 
 ---
 
@@ -36,9 +36,9 @@ We express our deepest thanks to both projects and their contributors for keepin
 - Accessible directly from the slide-out **Settings Drawer** (`⚙` -> **⚡ Quick Save Anywhere**) with a floating animated on-screen HUD toast (`"Game Progress Saved Anywhere!"`).
 - Safely writes full user file data, star bit counts, coin tallies, comet timers, and unlocked galaxies directly to internal NAND storage.
 
-### 🌋 Next-Gen Dual Graphics Pipeline: Vulkan 1.1 & OpenGL ES 3.2
-- **Vulkan 1.1 Hardware Backend**: High-throughput Vulkan renderer with offscreen EFB color and depth/stencil target allocation, dynamic hardware depth format probing (`VK_FORMAT_D32_SFLOAT`, `VK_FORMAT_D24_UNORM`, `VK_FORMAT_D16_UNORM`), physical device blit capability queries (linear filter fallback to nearest), and swapchain resize recovery.
-- **OpenGL ES 3.2 Backend**: Highly optimized shader generator for Mali and Adreno GPUs with dynamic TEV stage compilation and indirect texture coordinate warping.
+### 🌋 Dual Graphics Pipeline: OpenGL ES 3.2 (Stable) & Vulkan 1.1 (Experimental WIP)
+- **OpenGL ES 3.2 Backend (Default & Recommended)**: Production-ready renderer featuring dynamic TEV stage compilation, Mali & Adreno lighting safeguards, non-zero vector normalization guards, and indirect texture coordinate warping.
+- **Vulkan 1.1 Hardware Backend (Experimental WIP)**: Next-generation low-overhead Vulkan backend. Hardware probing, swapchain management, dynamic depth format selection, and fence synchronization are in place; full GX draw record playback is actively in progress.
 
 ### 🎮 Comprehensive Gamepad & Handheld Console Support
 - Native plug-and-play support for Bluetooth and USB gamepads (Xbox Wireless, PlayStation DualSense / DualShock 4, Switch Pro, Razer Kishi, Backbone One, etc.).

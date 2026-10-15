@@ -249,7 +249,11 @@ def plan(data_dir, out_dir, args):
             relp = n if rel == '.' else rel + '/' + n
             if args.only and args.only.lower() not in relp.lower():
                 continue
-            dst = os.path.join(out_dir, 'files', relp)
+            dst = os.path.abspath(os.path.join(out_dir, 'files', relp))
+            out_root = os.path.abspath(os.path.join(out_dir, 'files'))
+            if not dst.startswith(out_root + os.sep) and dst != out_root:
+                print('[Security Warning] Skipping traversal path in plan: %s' % relp)
+                continue
             ext = os.path.splitext(n)[1].lower()
             if ext in ('.arc', '.szs'):
                 mode = 'archive'

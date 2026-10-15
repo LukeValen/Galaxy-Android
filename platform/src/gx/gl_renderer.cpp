@@ -2334,6 +2334,8 @@ EfbTarget Renderer::createTarget(int width, int height) {
     GLenum st = glCheckFramebufferStatus(GL_FRAMEBUFFER);
     if (st != GL_FRAMEBUFFER_COMPLETE) {
         port_log("gl: EFB target %dx%d incomplete (0x%x)", width, height, st);
+        destroyTarget(t);
+        return {};
     }
     return t;
 }
