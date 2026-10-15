@@ -95,7 +95,7 @@ public class MainActivity extends Activity {
 
         if (isGameDataReady()) {
             btnLaunchGame.setVisibility(View.VISIBLE);
-            btnLaunchGame.setText("Launch Installed Game 🚀");
+            btnLaunchGame.setText("Launch Installed Game \uD83D\uDE80");
             txtProgressStatus.setText("Installed game data verified! Tap to launch or select an ISO below to reinstall.");
         }
 
@@ -463,7 +463,7 @@ public class MainActivity extends Activity {
             txtProgressStatus.setText(R.string.status_done);
             appendLog("[SUCCESS] " + (message != null ? message : "Conversion complete!"));
             btnLaunchGame.setVisibility(View.VISIBLE);
-            btnLaunchGame.setText("Launch Game 🚀");
+            btnLaunchGame.setText("Launch Game \uD83D\uDE80");
             Toast.makeText(this, "Game ready! Launching game now...", Toast.LENGTH_SHORT).show();
             // Automatically launch into game!
             mHandler.postDelayed(this::launchGameDirectly, 1000);

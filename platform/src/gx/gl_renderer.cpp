@@ -335,6 +335,12 @@ void Renderer::Impl::loadShaderCache() {
     if (sShaderCachePath.empty() || cacheOut) {
         return;
     }
+    GLint numBinFmts = 0;
+    glGetIntegerv(GL_NUM_PROGRAM_BINARY_FORMATS, &numBinFmts);
+    if (numBinFmts <= 0) {
+        port_log("gl: program binary formats not supported on this GPU driver (GL_NUM_PROGRAM_BINARY_FORMATS = %d)", numBinFmts);
+        return;
+    }
     FILE* in = fopen(sShaderCachePath.c_str(), "rb");
     size_t loaded = 0, stale = 0;
     if (in) {
@@ -382,6 +388,11 @@ void Renderer::Impl::loadShaderCache() {
 
 void Renderer::Impl::storeBinary(const ShaderUid& uid, GLuint prog) {
     if (!prog) {
+        return;
+    }
+    GLint numBinFmts = 0;
+    glGetIntegerv(GL_NUM_PROGRAM_BINARY_FORMATS, &numBinFmts);
+    if (numBinFmts <= 0) {
         return;
     }
     if (!cacheOut && !sShaderCachePath.empty()) {

@@ -112,12 +112,12 @@ std::string konstAlpha(uint32_t sel) {
 
 std::string tevRegular(const char* comp, uint32_t bias, uint32_t sub, uint32_t scale, bool alpha) {
     static const char* biasStr[3] = {"", " + 128", " - 128"};
-    static const char* scaleLeft[4] = {"", " << 1", " << 2", ""};
-    static const char* scaleRight[4] = {"", "", "", " >> 1"};
+    static const char* scaleLeft[4] = {"", " * 2", " * 4", ""};
+    static const char* scaleRight[4] = {"", "", "", " / 2"};
     const char* lerpBias = ((scale == 3) == alpha) ? (sub ? " + 127" : " + 128") : "";
     char buf[512];
     snprintf(buf, sizeof(buf),
-             "(((tevin_d.%s%s)%s) %c (((((tevin_a.%s << 8) + (tevin_b.%s - tevin_a.%s) * (tevin_c.%s + (tevin_c.%s >> 7)))%s)%s) >> 8))%s", comp,
+             "((((tevin_d.%s%s)%s) %c (((((tevin_a.%s * 256) + (tevin_b.%s - tevin_a.%s) * (tevin_c.%s + (tevin_c.%s / 128)))%s)%s) / 256))%s)", comp,
              biasStr[bias], scaleLeft[scale], sub ? '-' : '+', comp, comp, comp, comp, comp, scaleLeft[scale], lerpBias, scaleRight[scale]);
     return buf;
 }
@@ -492,7 +492,7 @@ std::string genVulkanFragmentShader(const ShaderUid& u) {
         } else {
             o.w("  tex = ivec4(0);\n");
         }
-        const char* rasSrc = (chan == 0 || chan == 2 || chan == 4) ? "v_clr0" : (chan == 1 || chan == 3 || chan == 5) ? "v_clr1" : "vec4(0.0)";
+        const char* rasSrc = (chan == 0) ? "v_clr0" : (chan == 1) ? "v_clr1" : "vec4(0.0)";
         o.w("  ras = ivec4(round(clamp(%s, 0.0, 1.0)%s * 255.0));\n", rasSrc, swapString(u, rswap).c_str());
         o.w("  kc = %s;\n  ka = %s;\n", konstColor(kcsel).c_str(), konstAlpha(kasel).c_str());
 

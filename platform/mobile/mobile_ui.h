@@ -94,6 +94,14 @@ public:
     void setPlusEdition(bool plus) { mPlusEdition = plus; }
     bool isPlusEdition() const { return mPlusEdition; }
 
+    // Pointer position (Star Pointer)
+    void setPointerPos(float x, float y) {
+        mPointerX = x;
+        mPointerY = y;
+    }
+    float getPointerX() const { return mPointerX; }
+    float getPointerY() const { return mPointerY; }
+
     // Touch controls edit mode
     bool isEditModeActive() const { return mEditLayoutMode; }
     void setEditMode(bool active);

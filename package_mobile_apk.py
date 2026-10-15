@@ -69,7 +69,7 @@ if not JAVAC:
 
 BUILD_MOBILE = os.path.join(ROOT, "build-mobile")
 OUT = os.path.join(ROOT, "out-mobile")
-KEYSTORE = os.path.join(ROOT, "out", "debug.keystore")
+KEYSTORE = os.path.join(ROOT, "platform", "mobile", "release.keystore")
 INSTALLER_DIR = os.path.join(ROOT, "installer-mobile")
 
 def run(cmd):
@@ -138,7 +138,7 @@ def main():
     r_files = glob.glob(os.path.join(gen_dir, "**", "*.java"), recursive=True)
     all_java = src_files + r_files
     print(f"[JAVAC] Compiling {len(all_java)} Java sources...")
-    run([JAVAC, "-cp", ANDROID_JAR, "-d", classes_dir, "-source", "1.8", "-target", "1.8"] + all_java)
+    run([JAVAC, "-encoding", "UTF-8", "-cp", ANDROID_JAR, "-d", classes_dir, "-source", "1.8", "-target", "1.8"] + all_java)
 
     # 3. Desugar and Dex with D8
     class_files = glob.glob(os.path.join(classes_dir, "**", "*.class"), recursive=True)

@@ -89,6 +89,32 @@ static ASensorManager* sSensorManager = nullptr;
 static const ASensor* sGyroSensor = nullptr;
 static const ASensor* sAccelSensor = nullptr;
 static ASensorEventQueue* sSensorQueue = nullptr;
+static bool sSensorsActive = false;
+
+static void updateSensorsState(bool enable) {
+    if (!sSensorQueue) return;
+    if (enable && !sSensorsActive) {
+        if (sGyroSensor) {
+            ASensorEventQueue_enableSensor(sSensorQueue, sGyroSensor);
+            ASensorEventQueue_setEventRate(sSensorQueue, sGyroSensor, 16666);
+            LOGI("Sensors: Activated gyroscope for star pointer motion");
+        } else if (sAccelSensor) {
+            ASensorEventQueue_enableSensor(sSensorQueue, sAccelSensor);
+            ASensorEventQueue_setEventRate(sSensorQueue, sAccelSensor, 16666);
+            LOGI("Sensors: Activated accelerometer for star pointer motion");
+        }
+        sSensorsActive = true;
+    } else if (!enable && sSensorsActive) {
+        if (sGyroSensor) {
+            ASensorEventQueue_disableSensor(sSensorQueue, sGyroSensor);
+        }
+        if (sAccelSensor) {
+            ASensorEventQueue_disableSensor(sSensorQueue, sAccelSensor);
+        }
+        sSensorsActive = false;
+        LOGI("Sensors: Deactivated sensors (gyro aiming off)");
+    }
+}
 
 static void initSensors(android_app* app) {
     if (!sSensorManager) {
@@ -101,20 +127,18 @@ static void initSensors(android_app* app) {
         sGyroSensor = ASensorManager_getDefaultSensor(sSensorManager, ASENSOR_TYPE_GYROSCOPE);
         sAccelSensor = ASensorManager_getDefaultSensor(sSensorManager, ASENSOR_TYPE_ACCELEROMETER);
         sSensorQueue = ASensorManager_createEventQueue(sSensorManager, app->looper, 3, nullptr, nullptr);
-        if (sGyroSensor && sSensorQueue) {
-            ASensorEventQueue_enableSensor(sSensorQueue, sGyroSensor);
-            ASensorEventQueue_setEventRate(sSensorQueue, sGyroSensor, 16666);
-            LOGI("Sensors: Enabled gyroscope for motion star pointer");
-        } else if (sAccelSensor && sSensorQueue) {
-            ASensorEventQueue_enableSensor(sSensorQueue, sAccelSensor);
-            ASensorEventQueue_setEventRate(sSensorQueue, sAccelSensor, 16666);
-            LOGI("Sensors: Enabled accelerometer for motion star pointer");
-        }
+        sSensorsActive = false;
     }
 }
 
 static void pollSensors(MobileApp& a) {
-    if (!sSensorQueue || !mobile_ui::get().settings().gyroAiming) return;
+    if (!sSensorQueue) return;
+    bool wantGyro = mobile_ui::UIOverlay::get().settings().gyroAiming;
+    if (wantGyro != sSensorsActive) {
+        updateSensorsState(wantGyro);
+    }
+    if (!sSensorsActive) return;
+
     ASensorEvent event;
     while (ASensorEventQueue_getEvents(sSensorQueue, &event, 1) > 0) {
         if (event.type == ASENSOR_TYPE_GYROSCOPE) {
@@ -126,6 +150,7 @@ static void pollSensors(MobileApp& a) {
             a.pad.pointerX = std::max(-1.0f, std::min(1.0f, a.pad.pointerX));
             a.pad.pointerY = std::max(-1.0f, std::min(1.0f, a.pad.pointerY));
             a.pad.pointerValid = 1;
+            mobile_ui::UIOverlay::get().setPointerPos(a.pad.pointerX, a.pad.pointerY);
             port_input_set(0, &a.pad);
         } else if (event.type == ASENSOR_TYPE_ACCELEROMETER) {
             float tiltX = event.acceleration.y * 0.15f;
@@ -133,6 +158,7 @@ static void pollSensors(MobileApp& a) {
             a.pad.pointerX = std::max(-1.0f, std::min(1.0f, tiltX));
             a.pad.pointerY = std::max(-1.0f, std::min(1.0f, tiltY));
             a.pad.pointerValid = 1;
+            mobile_ui::UIOverlay::get().setPointerPos(a.pad.pointerX, a.pad.pointerY);
             port_input_set(0, &a.pad);
         }
     }
