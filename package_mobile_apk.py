@@ -9,7 +9,12 @@ import zipfile
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
 # 1. Resolve Android SDK
-SDK = os.environ.get("ANDROID_HOME") or os.environ.get("ANDROID_SDK_ROOT") or os.path.expandvars(r"%LOCALAPPDATA%\Android\Sdk")
+SDK = os.environ.get("ANDROID_HOME") or os.environ.get("ANDROID_SDK_ROOT")
+if not SDK or not os.path.isdir(SDK):
+    if os.path.isdir(r"C:\Android\Sdk"):
+        SDK = r"C:\Android\Sdk"
+    else:
+        SDK = os.path.expandvars(r"%LOCALAPPDATA%\Android\Sdk")
 
 # 2. Resolve Build Tools (pick highest version)
 bt_parent = os.path.join(SDK, "build-tools") if SDK else ""
@@ -53,7 +58,14 @@ if NDK_DIR:
         STRIP = matches[0]
 
 # 5. Resolve JAVAC
-JAVAC = shutil.which("javac") or "javac"
+JAVAC = shutil.which("javac")
+if not JAVAC:
+    for candidate in [r"C:\Program Files\Java\jdk-17\bin\javac.exe", r"C:\Program Files\Java\latest\bin\javac.exe"]:
+        if os.path.exists(candidate):
+            JAVAC = candidate
+            break
+if not JAVAC:
+    JAVAC = "javac"
 
 BUILD_MOBILE = os.path.join(ROOT, "build-mobile")
 OUT = os.path.join(ROOT, "out-mobile")
