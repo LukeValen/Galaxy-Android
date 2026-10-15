@@ -913,7 +913,7 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
 
     LOGI("GalaxyMobile exiting cleanly");
     destroySurface(a);
-    exit(0);
+    _exit(0);
 }
 
 extern "C" {
