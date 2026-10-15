@@ -68,8 +68,8 @@ public:
 
     // Current virtual stick state
     bool isStickActive() const { return mStickPointerId >= 0; }
-    float getTouchStickX() const { return mTouchStickX; }
-    float getTouchStickY() const { return mTouchStickY; }
+    float getTouchStickX() const { return (mStickPointerId >= 0) ? mTouchStickX : 0.0f; }
+    float getTouchStickY() const { return (mStickPointerId >= 0) ? mTouchStickY : 0.0f; }
 
     // Processes an Android motion or key event.
     // Returns true if consumed (e.g., settings menu or virtual controls).
@@ -83,6 +83,10 @@ public:
     bool isSettingsOpen() const { return mSettingsOpen || mDrawerAnim > 0.01f; }
     void closeSettings();
     void triggerSaveAnywhere();
+    void triggerSaveSlot(int slot);
+    void triggerLoadSlot(int slot);
+    int currentSlot() const { return mCurrentSlot; }
+    void setCurrentSlot(int s) { mCurrentSlot = (s >= 1 && s <= 3) ? s : 1; }
     void showToast(const std::string& msg);
     Settings& settings() { return mSettings; }
     void setPlusEdition(bool plus) { mPlusEdition = plus; }
@@ -93,6 +97,7 @@ private:
 
     Settings mSettings;
     std::string mSavePath;
+    int mCurrentSlot = 1;
     bool mPlusEdition = true;
     bool mInitialized = false;
     bool mDirty = false;

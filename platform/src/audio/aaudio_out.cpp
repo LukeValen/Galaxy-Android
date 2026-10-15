@@ -200,6 +200,7 @@ bool openStream(u32 rate) {
         if (AAudio_createStreamBuilder(&b) == AAUDIO_OK) {
             AAudioStreamBuilder_setFormat(b, AAUDIO_FORMAT_PCM_I16);
             AAudioStreamBuilder_setChannelCount(b, 2);
+            AAudioStreamBuilder_setSampleRate(b, 48000);
             AAudioStreamBuilder_setPerformanceMode(b, AAUDIO_PERFORMANCE_MODE_NONE);
             AAudioStreamBuilder_setSharingMode(b, AAUDIO_SHARING_MODE_SHARED);
             AAudioStreamBuilder_setUsage(b, AAUDIO_USAGE_MEDIA);
@@ -216,14 +217,14 @@ bool openStream(u32 rate) {
         return false;
     }
     sDeviceRate = AAudioStream_getSampleRate(sStream);
+    if (sDeviceRate <= 0) sDeviceRate = 48000;
     // Dynamic low-latency buffer sizing: start at 3 bursts (~6-12 ms latency),
     // and let dataCallback dynamically expand if hardware underruns occur.
     int32_t burst = AAudioStream_getFramesPerBurst(sStream);
-    if (burst > 0) {
-        int32_t cap = AAudioStream_getBufferCapacityInFrames(sStream);
-        int32_t desired = std::min(burst * 3, cap);
-        AAudioStream_setBufferSizeInFrames(sStream, desired);
-    }
+    if (burst <= 0) burst = 192;
+    int32_t cap = AAudioStream_getBufferCapacityInFrames(sStream);
+    int32_t desired = (cap > 0) ? std::min(burst * 3, cap) : burst * 3;
+    AAudioStream_setBufferSizeInFrames(sStream, desired);
     sRingRead.store(sRingWrite.load());
     sResampler = Resampler();
     r = AAudioStream_requestStart(sStream);

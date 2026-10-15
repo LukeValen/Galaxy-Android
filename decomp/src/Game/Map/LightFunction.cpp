@@ -162,8 +162,10 @@ void LightFunction::blendActorLightInfo(ActorLightInfo* pResult, const ActorLigh
 namespace {
     void loadLightDiffuse(GXColor color, const TVec3f& rPos, GXLightID lightID) NO_INLINE {
         GXLightObj lightObj;
+        memset(&lightObj, 0, sizeof(lightObj));
 
         GXInitLightPos(&lightObj, rPos.x, rPos.y, rPos.z);
+        GXInitLightDir(&lightObj, 0.0f, -1.0f, 0.0f);
         GXInitLightAttn(&lightObj, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f);
 
         GXColor new_color(color);

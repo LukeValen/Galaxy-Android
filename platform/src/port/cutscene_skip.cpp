@@ -28,8 +28,8 @@
 
 namespace {
 
-// Game thread: the hold and the fast-forward.
-float sHoldSeconds = 1.0f;
+// Game thread: the hold and the fast-forward (0 = disabled).
+float sHoldSeconds = 0.0f;
 int sKind = PORT_SKIP_NONE;
 int64_t sHoldStart = 0;
 bool sNeedRelease = false;
@@ -94,9 +94,25 @@ void endForward(const char* why) {
 
 extern "C" {
 
-void port_skip_set_hold_seconds(float seconds) { sHoldSeconds = seconds; }
+void port_skip_set_hold_seconds(float seconds) {
+    sHoldSeconds = seconds;
+    if (sHoldSeconds <= 0.0f && sForward.load()) {
+        endForward("skip disabled");
+    }
+}
 
 void port_skip_context(int kind) {
+    if (sHoldSeconds <= 0.0f) {
+        if (sForward.load()) {
+            endForward("skip disabled");
+        }
+        sHoldStart = 0;
+        sProgress.store(0.0f);
+        sForwardEndAt = 0;
+        sPending = PORT_SKIP_NONE;
+        return;
+    }
+
     int64_t now = port_host_time_ns();
     bool held = port_input_real_a() != 0;
     bool resumed = contextStale(now);  // first update of a scene, or after a stall
@@ -191,7 +207,10 @@ int port_skip_interrupt(void) {
     return 1;
 }
 
-int port_skip_fast_forwarding(void) { return sForward.load() && !contextStale(port_host_time_ns()); }
+int port_skip_fast_forwarding(void) {
+    if (sHoldSeconds <= 0.0f) return 0;
+    return sForward.load() && !contextStale(port_host_time_ns());
+}
 
 void port_skip_scene_change(void) {
     if (sForward.load()) {
@@ -201,6 +220,10 @@ void port_skip_scene_change(void) {
 
 // Input thread: A as the game should read it (-1: as pressed).
 int port_skip_inject_a(void) {
+    if (sHoldSeconds <= 0.0f) {
+        sMaskA.store(false);
+        return -1;
+    }
     if (port_skip_fast_forwarding()) {
         return sInjectA.load() ? 1 : 0;
     }

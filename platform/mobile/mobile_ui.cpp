@@ -9,6 +9,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <dirent.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -370,11 +372,99 @@ void UIOverlay::closeSettings() {
     }
 }
 
+static void copyDirRecursive(const std::string& src, const std::string& dst) {
+    mkdir(dst.c_str(), 0770);
+    DIR* dir = opendir(src.c_str());
+    if (!dir) return;
+    struct dirent* entry;
+    while ((entry = readdir(dir)) != nullptr) {
+        if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, "..")) continue;
+        std::string sPath = src + "/" + entry->d_name;
+        std::string dPath = dst + "/" + entry->d_name;
+        struct stat st;
+        if (stat(sPath.c_str(), &st) == 0) {
+            if (S_ISDIR(st.st_mode)) {
+                copyDirRecursive(sPath, dPath);
+            } else if (S_ISREG(st.st_mode)) {
+                FILE* in = fopen(sPath.c_str(), "rb");
+                FILE* out = fopen(dPath.c_str(), "wb");
+                if (in && out) {
+                    char buf[8192];
+                    size_t bytes;
+                    while ((bytes = fread(buf, 1, sizeof(buf), in)) > 0) {
+                        fwrite(buf, 1, bytes, out);
+                    }
+                }
+                if (in) fclose(in);
+                if (out) fclose(out);
+            }
+        }
+    }
+    closedir(dir);
+}
+
 void UIOverlay::triggerSaveAnywhere() {
     port_trigger_quick_save();
+    if (!mSavePath.empty()) {
+        size_t lastSlash = mSavePath.find_last_of('/');
+        if (lastSlash != std::string::npos) {
+            std::string nandDir = mSavePath.substr(0, lastSlash);
+            mkdir("/sdcard/GalaxyData", 0775);
+            mkdir("/sdcard/GalaxyData/saves", 0775);
+            copyDirRecursive(nandDir, "/sdcard/GalaxyData/saves/current");
+        }
+    }
     if (mSettings.haptics) port_android_vibrate(50);
-    showToast("Game Progress Saved Anywhere!");
+    showToast("Game Progress Saved Anywhere! (Mirrored to /sdcard/GalaxyData/saves)");
     LOGI("Save anywhere requested and triggered from Mobile UI");
+}
+
+void UIOverlay::triggerSaveSlot(int slot) {
+    port_trigger_quick_save();
+    if (mSavePath.empty()) return;
+    size_t lastSlash = mSavePath.find_last_of('/');
+    if (lastSlash == std::string::npos) return;
+    std::string nandDir = mSavePath.substr(0, lastSlash);
+    std::string slotDir = nandDir + "_slot" + std::to_string(slot);
+    copyDirRecursive(nandDir, slotDir);
+
+    mkdir("/sdcard/GalaxyData", 0775);
+    mkdir("/sdcard/GalaxyData/saves", 0775);
+    std::string pubSlot = "/sdcard/GalaxyData/saves/slot" + std::to_string(slot);
+    copyDirRecursive(nandDir, pubSlot);
+    copyDirRecursive(nandDir, "/sdcard/GalaxyData/saves/current");
+
+    if (mSettings.haptics) port_android_vibrate(50);
+    char msg[96];
+    snprintf(msg, sizeof(msg), "Saved to Slot %d! 💾 (GalaxyData/saves)", slot);
+    showToast(msg);
+    LOGI("NAND saved to slot %d: %s and mirrored to %s", slot, slotDir.c_str(), pubSlot.c_str());
+}
+
+void UIOverlay::triggerLoadSlot(int slot) {
+    if (mSavePath.empty()) return;
+    size_t lastSlash = mSavePath.find_last_of('/');
+    if (lastSlash == std::string::npos) return;
+    std::string nandDir = mSavePath.substr(0, lastSlash);
+    std::string slotDir = nandDir + "_slot" + std::to_string(slot);
+    struct stat st;
+    if (stat(slotDir.c_str(), &st) != 0 || !S_ISDIR(st.st_mode)) {
+        std::string pubSlot = "/sdcard/GalaxyData/saves/slot" + std::to_string(slot);
+        if (stat(pubSlot.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) {
+            slotDir = pubSlot;
+        } else {
+            char msg[64];
+            snprintf(msg, sizeof(msg), "Slot %d is empty!", slot);
+            showToast(msg);
+            return;
+        }
+    }
+    copyDirRecursive(slotDir, nandDir);
+    if (mSettings.haptics) port_android_vibrate(75);
+    char msg[64];
+    snprintf(msg, sizeof(msg), "Slot %d Loaded! 🔄", slot);
+    showToast(msg);
+    LOGI("NAND restored from slot %d: %s", slot, slotDir.c_str());
 }
 
 void UIOverlay::showToast(const std::string& msg) {
@@ -887,10 +977,11 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                         }
                         // Row 12: Target Frame Rate
                         else if (contentRelY >= 660.0f * uiScale && contentRelY < 718.0f * uiScale) {
-                            float segW = contentW / 3.0f;
+                            float segW = contentW / 4.0f;
                             int idx = (int)((px - (drawerX + padX)) / segW);
-                            if (idx <= 0) mSettings.targetFps = 60;
-                            else if (idx == 1) mSettings.targetFps = 90;
+                            if (idx <= 0) mSettings.targetFps = 30;
+                            else if (idx == 1) mSettings.targetFps = 60;
+                            else if (idx == 2) mSettings.targetFps = 90;
                             else mSettings.targetFps = 120;
                         }
                         // Row 13: Graphics Backend
@@ -973,6 +1064,21 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                         else if (contentRelY >= 274.0f * uiScale && contentRelY <= 334.0f * uiScale) {
                             mSettings.modInfiniteStarBits = !mSettings.modInfiniteStarBits;
                             showToast(mSettings.modInfiniteStarBits ? "Infinite Star Bits (999): ON ⭐" : "Infinite Star Bits: OFF");
+                        }
+                        // Row 6: Save Slot Selector
+                        else if (contentRelY >= 336.0f * uiScale && contentRelY < 396.0f * uiScale) {
+                            float segW = contentW / 3.0f;
+                            int idx = (int)((px - (drawerX + padX)) / segW);
+                            mCurrentSlot = std::max(1, std::min(3, idx + 1));
+                        }
+                        // Row 7: Slot Save / Reload Buttons
+                        else if (contentRelY >= 398.0f * uiScale && contentRelY < 458.0f * uiScale) {
+                            float midX = drawerX + padX + contentW * 0.5f;
+                            if (px < midX) {
+                                triggerSaveSlot(mCurrentSlot);
+                            } else {
+                                triggerLoadSlot(mCurrentSlot);
+                            }
                         }
                     }
 
@@ -1307,7 +1413,7 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
             float dx = px - mStickBaseX;
             float dy = py - mStickBaseY;
             float dist = sqrtf(dx * dx + dy * dy);
-            float deadzone = 8.0f * scale;
+            float deadzone = 16.0f * scale;
 
             if (dist > stickMaxR && dist > 0.001f) {
                 mStickKnobX = mStickBaseX + (dx / dist) * stickMaxR;
@@ -1911,7 +2017,7 @@ void UIOverlay::render(int screenW, int screenH) {
         float contentW = drawerW - padX * 2.0f;
         float contentTop = mPlusEdition ? (112.0f * uiScale) : (68.0f * uiScale);
         float contentBottom = h - 56.0f * uiScale;
-        float totalContentH = (mSettingsTab == 0 || !mPlusEdition) ? (1160.0f * uiScale) : (440.0f * uiScale);
+        float totalContentH = (mSettingsTab == 0 || !mPlusEdition) ? (1160.0f * uiScale) : (580.0f * uiScale);
         float maxScroll = std::max(0.0f, totalContentH - (contentBottom - contentTop));
 
         // Smooth scroll damping
@@ -2042,9 +2148,9 @@ void UIOverlay::render(int screenW, int screenH) {
             // Row 12: Target Frame Rate Segmented Button
             renderRow(664.0f * uiScale, 54.0f * uiScale, [&](float y) {
                 drawText("Target Frame Rate", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                const char* fpsOpts[3] = {"60 FPS", "90 FPS", "120 FPS"};
-                int fpsIdx = (mSettings.targetFps >= 120) ? 2 : (mSettings.targetFps >= 90) ? 1 : 0;
-                drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, fpsOpts, 3, fpsIdx);
+                const char* fpsOpts[4] = {"30 FPS", "60 FPS", "90 FPS", "120 FPS"};
+                int fpsIdx = (mSettings.targetFps >= 120) ? 3 : (mSettings.targetFps >= 90) ? 2 : (mSettings.targetFps >= 60) ? 1 : 0;
+                drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, fpsOpts, 4, fpsIdx);
             });
 
             // Row 13: Graphics Backend Segmented Button
@@ -2164,13 +2270,41 @@ void UIOverlay::render(int screenW, int screenH) {
                 drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.modInfiniteStarBits);
             });
 
+            // Row 6: Save Slot Selector
+            renderRow(340.0f * uiScale, 54.0f * uiScale, [&](float y) {
+                drawText("Multi-Save Slot", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+                const char* slotOpts[3] = {"Slot 1", "Slot 2", "Slot 3"};
+                drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, slotOpts, 3, mCurrentSlot - 1);
+            });
+
+            // Row 7: Slot Save / Reload Action Buttons
+            renderRow(400.0f * uiScale, 52.0f * uiScale, [&](float y) {
+                float bW = (contentW - 12.0f * uiScale) * 0.5f;
+                float btnY = y + 4.0f * uiScale;
+                // Save Button (Green)
+                float sX0 = drawerX + padX;
+                float sX1 = sX0 + bW;
+                drawRoundRect(sX0, btnY, sX1, btnY + 40.0f * uiScale, 12.0f * uiScale, rgba(0.06f, 0.42f, 0.32f, 0.95f));
+                drawRoundRect(sX0, btnY, sX1, btnY + 40.0f * uiScale, 12.0f * uiScale, rgba(0.25f, 0.85f, 0.65f, 0.60f));
+                char sTxt[32]; snprintf(sTxt, sizeof(sTxt), "💾 Save Slot %d", mCurrentSlot);
+                drawText(sTxt, (sX0 + sX1) * 0.5f, btnY + 25.0f * uiScale, 0.34f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
+
+                // Reload Button (Blue)
+                float rX0 = sX1 + 12.0f * uiScale;
+                float rX1 = rX0 + bW;
+                drawRoundRect(rX0, btnY, rX1, btnY + 40.0f * uiScale, 12.0f * uiScale, rgba(0.12f, 0.28f, 0.55f, 0.95f));
+                drawRoundRect(rX0, btnY, rX1, btnY + 40.0f * uiScale, 12.0f * uiScale, rgba(0.35f, 0.65f, 0.98f, 0.60f));
+                char rTxt[32]; snprintf(rTxt, sizeof(rTxt), "🔄 Reload Slot %d", mCurrentSlot);
+                drawText(rTxt, (rX0 + rX1) * 0.5f, btnY + 25.0f * uiScale, 0.34f * uiScale, rgba(1.0f, 1.0f, 1.0f, 1.0f), 1);
+            });
+
             // Info Card
-            renderRow(342.0f * uiScale, 84.0f * uiScale, [&](float y) {
+            renderRow(464.0f * uiScale, 84.0f * uiScale, [&](float y) {
                 drawRoundRect(drawerX + padX, y + 6.0f * uiScale, drawerX + drawerW - padX, y + 80.0f * uiScale, 14.0f * uiScale, rgba(0.14f, 0.17f, 0.22f, 0.95f));
                 drawRoundRect(drawerX + padX, y + 6.0f * uiScale, drawerX + drawerW - padX, y + 80.0f * uiScale, 14.0f * uiScale, rgba(0.24f, 0.32f, 0.45f, 0.60f));
-                drawText("CHEATS STATUS", drawerX + padX + 16.0f * uiScale, y + 26.0f * uiScale, 0.32f * uiScale, rgba(0.38f, 0.74f, 0.98f, 0.95f), 0);
-                drawText("Cheats take effect in real-time during gameplay.", drawerX + padX + 16.0f * uiScale, y + 44.0f * uiScale, 0.27f * uiScale, rgba(0.80f, 0.84f, 0.90f, 0.85f), 0);
-                drawText("Toggles work seamlessly without restarting.", drawerX + padX + 16.0f * uiScale, y + 62.0f * uiScale, 0.27f * uiScale, rgba(0.80f, 0.84f, 0.90f, 0.85f), 0);
+                drawText("CHEATS & SLOTS STATUS", drawerX + padX + 16.0f * uiScale, y + 26.0f * uiScale, 0.32f * uiScale, rgba(0.38f, 0.74f, 0.98f, 0.95f), 0);
+                drawText("Save slots let you branch your game at any point.", drawerX + padX + 16.0f * uiScale, y + 44.0f * uiScale, 0.27f * uiScale, rgba(0.80f, 0.84f, 0.90f, 0.85f), 0);
+                drawText("Reload instantly restores the selected slot's NAND save.", drawerX + padX + 16.0f * uiScale, y + 62.0f * uiScale, 0.27f * uiScale, rgba(0.80f, 0.84f, 0.90f, 0.85f), 0);
             });
         }
 

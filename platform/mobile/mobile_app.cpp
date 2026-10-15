@@ -414,9 +414,16 @@ int32_t onInput(android_app* app, AInputEvent* event) {
             // Left Stick (Analog Movement)
             float stickX = AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_X, 0);
             float stickY = AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_Y, 0);
-            const float kDeadzone = 0.15f;
-            if (fabsf(stickX) <= kDeadzone) stickX = 0.0f;
-            if (fabsf(stickY) <= kDeadzone) stickY = 0.0f;
+            float stickMag = sqrtf(stickX * stickX + stickY * stickY);
+            const float kDeadzone = 0.18f;
+            if (stickMag <= kDeadzone) {
+                stickX = 0.0f;
+                stickY = 0.0f;
+            } else {
+                float norm = (stickMag - kDeadzone) / (1.0f - kDeadzone);
+                stickX = (stickX / stickMag) * std::min(1.0f, norm);
+                stickY = (stickY / stickMag) * std::min(1.0f, norm);
+            }
 
             a->pad.connected = 1;
             a->physicalStickX = stickX;
@@ -424,9 +431,12 @@ int32_t onInput(android_app* app, AInputEvent* event) {
             if (mobile_ui::get().isStickActive()) {
                 a->pad.stickX = mobile_ui::get().getTouchStickX();
                 a->pad.stickY = mobile_ui::get().getTouchStickY();
-            } else {
+            } else if (a->gamepadDetected && (fabsf(a->physicalStickX) > 0.001f || fabsf(a->physicalStickY) > 0.001f)) {
                 a->pad.stickX = a->physicalStickX;
                 a->pad.stickY = a->physicalStickY;
+            } else {
+                a->pad.stickX = 0.0f;
+                a->pad.stickY = 0.0f;
             }
 
             // D-Pad Hat axes (Standard on Xbox, PlayStation, 8BitDo, and HID pads)
@@ -441,10 +451,14 @@ int32_t onInput(android_app* app, AInputEvent* event) {
             else { a->physicalButtons &= ~0x000C; }
 
             // Analog Triggers (L2 / R2)
-            float lTrig = std::max(AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_LTRIGGER, 0),
-                                   AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_BRAKE, 0));
-            float rTrig = std::max(AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_RTRIGGER, 0),
-                                   AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_GAS, 0));
+            float rawL = std::max(0.0f, AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_LTRIGGER, 0));
+            float rawBrake = std::max(0.0f, AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_BRAKE, 0));
+            float lTrig = std::max(rawL, rawBrake);
+
+            float rawR = std::max(0.0f, AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_RTRIGGER, 0));
+            float rawGas = std::max(0.0f, AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_GAS, 0));
+            float rTrig = std::max(rawR, rawGas);
+
             if (lTrig > 0.4f) a->physicalButtons |= 0x2000; // Z button (Crouch / Ground Pound)
             else a->physicalButtons &= ~0x2000;
 
@@ -481,9 +495,12 @@ int32_t onInput(android_app* app, AInputEvent* event) {
             if (mobile_ui::get().isStickActive()) {
                 a->pad.stickX = mobile_ui::get().getTouchStickX();
                 a->pad.stickY = mobile_ui::get().getTouchStickY();
-            } else {
+            } else if (a->gamepadDetected && (fabsf(a->physicalStickX) > 0.001f || fabsf(a->physicalStickY) > 0.001f)) {
                 a->pad.stickX = a->physicalStickX;
                 a->pad.stickY = a->physicalStickY;
+            } else {
+                a->pad.stickX = 0.0f;
+                a->pad.stickY = 0.0f;
             }
             a->pad.buttons = a->physicalButtons | mobile_ui::get().getTouchButtons();
             port_input_set(0, &a->pad);
@@ -509,12 +526,15 @@ int32_t onInput(android_app* app, AInputEvent* event) {
         case AKEYCODE_BUTTON_A:
         case AKEYCODE_BUTTON_1:
         case AKEYCODE_DPAD_CENTER:
+        case AKEYCODE_ENTER:
+        case AKEYCODE_NUMPAD_ENTER:
             a->pad.connected = 1;
             if (down) a->physicalButtons |= 0x0800;  // A
             else a->physicalButtons &= ~0x0800;
             break;
         case AKEYCODE_BUTTON_B:
         case AKEYCODE_BUTTON_2:
+        case AKEYCODE_BUTTON_C:
             a->pad.connected = 1;
             if (down) a->physicalButtons |= 0x0400;  // B
             else a->physicalButtons &= ~0x0400;
@@ -536,6 +556,7 @@ int32_t onInput(android_app* app, AInputEvent* event) {
         case AKEYCODE_BUTTON_7:
         case AKEYCODE_BUTTON_THUMBL:
         case AKEYCODE_BUTTON_11:
+        case AKEYCODE_BUTTON_Z:
             a->pad.connected = 1;
             if (down) a->physicalButtons |= 0x2000;  // Z (crouch / ground pound)
             else a->physicalButtons &= ~0x2000;
@@ -580,13 +601,17 @@ int32_t onInput(android_app* app, AInputEvent* event) {
             else a->physicalButtons &= ~0x0002;
             break;
         case AKEYCODE_BACK:
-            if (mobile_ui::get().isSettingsOpen()) {
-                if (down) {
+        case AKEYCODE_ESCAPE:
+            if (down) {
+                if (mobile_ui::get().isSettingsOpen()) {
                     mobile_ui::get().closeSettings();
+                } else {
+                    a->physicalButtons |= 0x0010; // Pause (+)
                 }
-                return 1;
+            } else {
+                a->physicalButtons &= ~0x0010;
             }
-            return 0;
+            return 1;
         default:
             return 0;
         }
@@ -594,9 +619,12 @@ int32_t onInput(android_app* app, AInputEvent* event) {
         if (mobile_ui::get().isStickActive()) {
             a->pad.stickX = mobile_ui::get().getTouchStickX();
             a->pad.stickY = mobile_ui::get().getTouchStickY();
-        } else {
+        } else if (a->gamepadDetected && (fabsf(a->physicalStickX) > 0.001f || fabsf(a->physicalStickY) > 0.001f)) {
             a->pad.stickX = a->physicalStickX;
             a->pad.stickY = a->physicalStickY;
+        } else {
+            a->pad.stickX = 0.0f;
+            a->pad.stickY = 0.0f;
         }
         a->pad.buttons = a->physicalButtons | mobile_ui::get().getTouchButtons();
         port_input_set(0, &a->pad);
@@ -723,6 +751,7 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
 
     a.pad.connected = 1;
     port_input_set(0, &a.pad);
+    port_skip_set_hold_seconds(0.0f);
 
     std::string internalPath = app->activity->internalDataPath ? app->activity->internalDataPath : "";
     bool isPlus = (internalPath.find("plus") != std::string::npos);
@@ -828,9 +857,12 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
         if (mobile_ui::get().isStickActive()) {
             a.pad.stickX = mobile_ui::get().getTouchStickX();
             a.pad.stickY = mobile_ui::get().getTouchStickY();
-        } else {
+        } else if (a.gamepadDetected && (fabsf(a.physicalStickX) > 0.001f || fabsf(a.physicalStickY) > 0.001f)) {
             a.pad.stickX = a.physicalStickX;
             a.pad.stickY = a.physicalStickY;
+        } else {
+            a.pad.stickX = 0.0f;
+            a.pad.stickY = 0.0f;
         }
         a.pad.buttons = a.physicalButtons | mobile_ui::get().getTouchButtons();
         port_input_set(0, &a.pad);

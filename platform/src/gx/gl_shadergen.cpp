@@ -222,7 +222,7 @@ std::string genVertexShader(const ShaderUid& u) {
     o.w("  vec4 vclr1 = %s;\n", (f & VF_CLR1) ? "a_clr1" : "vec4(1.0)");
     for (int c = 0; c < 2; c++) {
         if ((uint32_t)c >= u.numChans) {
-            o.w("  v_clr%d = vclr%d;\n", c, c);
+            o.w("  v_clr%d = vec4(0.0);\n", c);
             continue;
         }
         for (int alpha = 0; alpha < 2; alpha++) {
@@ -263,20 +263,23 @@ std::string genVertexShader(const ShaderUid& u) {
                     o.w("      vec3 dv = (dot(ldirv, ldirv) > 1e-6) ? normalize(ldirv) : vec3(0.0, 0.0, -1.0);\n");
                     o.w("      float a = clamp(dot(ldir, dv), 0.0, 1.0);\n");
                     o.w("      float distDenom = dot(ldist, vec3(1.0, d, d2));\n");
-                    o.w("      att = (abs(distDenom) > 1e-5) ? clamp(dot(lcos, vec3(1.0, a, a * a)) / max(abs(distDenom), 1e-5), 0.0, 1.0) : 0.0;\n");
+                    o.w("      float cosNum = max(0.0, dot(lcos, vec3(1.0, a, a * a)));\n");
+                    o.w("      att = (distDenom > 1e-5) ? clamp(cosNum / distDenom, 0.0, 1.0) : 0.0;\n");
                 } else {
-                    o.w("      vec3 lv = (dot(lpos, lpos) > 1e-6) ? lpos : -pos;\n");
+                    o.w("      vec3 lv = (dot(lpos, lpos) > 1e-6) ? (lpos - pos) : -pos;\n");
                     o.w("      ldir = (dot(lv, lv) > 1e-6) ? normalize(lv) : vec3(0.0, 0.0, 1.0);\n");
                     o.w("      vec3 dv = (dot(ldirv, ldirv) > 1e-6) ? normalize(ldirv) : vec3(0.0, 0.0, -1.0);\n");
                     o.w("      float a = (dot(nrm, ldir) >= 0.0) ? clamp(dot(nrm, dv), 0.0, 1.0) : 0.0;\n");
                     o.w("      float distDenom = dot(ldist, vec3(1.0, a, a * a));\n");
-                    o.w("      att = (abs(distDenom) > 1e-5) ? clamp(dot(lcos, vec3(1.0, a, a * a)) / max(abs(distDenom), 1e-5), 0.0, 1.0) : 0.0;\n");
+                    o.w("      float cosNum = max(0.0, dot(lcos, vec3(1.0, a, a * a)));\n");
+                    o.w("      att = (distDenom > 1e-5) ? clamp(cosNum / distDenom, 0.0, 1.0) : 0.0;\n");
                 }
-                const char* dif = diffuse == 0 ? "1.0" : diffuse == 1 ? "max(0.0, dot(ldir, nrm))" : "max(0.0, dot(ldir, nrm))";
+                const char* dif = diffuse == 0 ? "1.0" : diffuse == 1 ? "clamp(dot(ldir, nrm), -1.0, 1.0)" : "max(0.0, dot(ldir, nrm))";
+                o.w("      att = clamp(isnan(att) ? 0.0 : att, 0.0, 1.0);\n");
                 o.w("      lit += att * %s * lcol.%s;\n", dif, sw);
                 o.w("    }\n");
             }
-            o.w("    v_clr%d.%s = %s * clamp(lit, 0.0, 1.0);\n  }\n", c, sw, mat);
+            o.w("    v_clr%d.%s = %s * clamp(isnan(lit) ? %s(0.0) : lit, 0.0, 1.0);\n  }\n", c, sw, mat, alpha ? "float" : "vec3");
         }
     }
 
@@ -482,7 +485,7 @@ std::string genFragmentShader(const ShaderUid& u) {
     o.w("in vec4 v_clr0;\nin vec4 v_clr1;\n");
     for (uint32_t i = 0; i < u.numTexGens; i++) o.w("in vec3 v_tex%u;\n", i);
     o.w("in float v_viewz;\nin float v_gxz;\nout vec4 o_color;\n");
-    o.w("vec2 projUv(vec3 t) { return (t.z != 0.0) ? t.xy / t.z : t.xy; }\n");
+    o.w("vec2 projUv(vec3 t) { return (abs(t.z) > 1e-6) ? t.xy / t.z : t.xy; }\n");
     o.w("int idot(ivec3 a, ivec3 b) { ivec3 t = a * b; return t.x + t.y + t.z; }\n");
     if (u.cutaway) {
         o.w("in vec3 v_eye;\n");
@@ -566,7 +569,7 @@ std::string genFragmentShader(const ShaderUid& u) {
             }
         }
         if (en) {
-            o.w("  tex = ivec4(round(texture(s_tex%u, %s, texSize[%u].x)%s * 255.0));\n", map, uv.c_str(), map, swapString(u, tswap).c_str());
+            o.w("  tex = ivec4(round(clamp(texture(s_tex%u, %s, texSize[%u].x)%s, 0.0, 1.0) * 255.0));\n", map, uv.c_str(), map, swapString(u, tswap).c_str());
             if (u.zTex) {
                 o.w("  ztex = tex;\n");
             }

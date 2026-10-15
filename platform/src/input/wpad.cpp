@@ -87,6 +87,16 @@ static Vec remoteGravity(const PortPadState& s) {
     }
     // A controller whose orientation is unknown counts as held level.
     Vec down = s.tilted ? Vec{s.downX, s.downY, s.downZ} : Vec{0.0f, -1.0f, 0.0f};
+    if (!s.tilted) {
+        // Fallback for mobile touchscreen and gamepads: steer ball and surfing ray using analog stick
+        float maxTiltAngle = 0.55f; // ~31.5 degrees, full deflection for Tamakoro and SurfRay
+        float tiltPitch = s.stickY * maxTiltAngle;
+        float tiltRoll = s.stickX * maxTiltAngle;
+        down.x = -__builtin_sinf(tiltRoll);
+        down.z = __builtin_sinf(tiltPitch);
+        float rem = 1.0f - (down.x * down.x + down.z * down.z);
+        down.y = -(rem > 0.0f ? __builtin_sqrtf(rem) : 0.0f);
+    }
     float p = sTiltNeutralPitch.load() * (3.14159265f / 180.0f);
     float c = __builtin_cosf(p), sn = __builtin_sinf(p);
     g.x = -down.x;
