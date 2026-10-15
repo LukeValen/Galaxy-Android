@@ -2562,32 +2562,63 @@ bool UIOverlay::exportSave() {
     size_t lastSlash = internalPath.rfind('/');
     if (lastSlash == std::string::npos) return false;
     std::string saveRoot = internalPath.substr(0, lastSlash);
-    std::string srcSave = saveRoot + "/title/00010000/524d4750/data/save.bin";
-    std::string dstSave = "/sdcard/Download/GalaxyAndroid_save.bin";
 
-    FILE* in = fopen(srcSave.c_str(), "rb");
-    if (!in) {
-        srcSave = saveRoot + "/save.bin";
-        in = fopen(srcSave.c_str(), "rb");
+    // SMG official save name is GameData.bin (also check save.bin and all regions)
+    const char* titles[] = {"524d4750", "524d4745", "524d474a", "524d474b"};
+    const char* fileNames[] = {"GameData.bin", "save.bin"};
+    std::string srcSave;
+    FILE* in = nullptr;
+
+    for (const char* t : titles) {
+        for (const char* fn : fileNames) {
+            std::string candidate = saveRoot + "/title/00010000/" + t + "/data/" + fn;
+            in = fopen(candidate.c_str(), "rb");
+            if (in) { srcSave = candidate; break; }
+        }
+        if (in) break;
     }
     if (!in) {
-        showToast("No save.bin found to export!");
+        for (const char* fn : fileNames) {
+            std::string candidate = saveRoot + "/" + fn;
+            in = fopen(candidate.c_str(), "rb");
+            if (in) { srcSave = candidate; break; }
+        }
+    }
+    if (!in) {
+        // Also check external backup mirror
+        std::string extCandidate = "/sdcard/GalaxyData/saves/GameData.bin";
+        in = fopen(extCandidate.c_str(), "rb");
+        if (in) srcSave = extCandidate;
+    }
+    if (!in) {
+        showToast("No save data found yet (play & save first)!");
         return false;
     }
-    FILE* out = fopen(dstSave.c_str(), "wb");
-    if (!out) {
+
+    // Write to both GalaxyAndroid_save.bin and GameData.bin in Downloads
+    mkdir("/sdcard/Download", 0770);
+    std::string dstSave1 = "/sdcard/Download/GalaxyAndroid_save.bin";
+    std::string dstSave2 = "/sdcard/Download/GameData.bin";
+
+    FILE* out1 = fopen(dstSave1.c_str(), "wb");
+    FILE* out2 = fopen(dstSave2.c_str(), "wb");
+    if (!out1 && !out2) {
         fclose(in);
         showToast("Cannot write to Downloads folder!");
         return false;
     }
+
     char buf[4096];
     size_t n;
     while ((n = fread(buf, 1, sizeof(buf), in)) > 0) {
-        fwrite(buf, 1, n, out);
+        if (out1) fwrite(buf, 1, n, out1);
+        if (out2) fwrite(buf, 1, n, out2);
     }
     fclose(in);
-    fclose(out);
-    showToast("Exported to Download/GalaxyAndroid_save.bin");
+    if (out1) fclose(out1);
+    if (out2) fclose(out2);
+
+    showToast("Exported to Download/GalaxyAndroid_save.bin!");
     return true;
 }
 
@@ -2596,34 +2627,65 @@ bool UIOverlay::importSave() {
     size_t lastSlash = internalPath.rfind('/');
     if (lastSlash == std::string::npos) return false;
     std::string saveRoot = internalPath.substr(0, lastSlash);
-    std::string dstSave = saveRoot + "/title/00010000/524d4750/data/save.bin";
-    std::string srcSave = "/sdcard/Download/GalaxyAndroid_save.bin";
 
-    FILE* in = fopen(srcSave.c_str(), "rb");
+    // Look for save in Downloads
+    const char* downloadCandidates[] = {
+        "/sdcard/Download/GalaxyAndroid_save.bin",
+        "/sdcard/Download/GameData.bin",
+        "/sdcard/Download/save.bin"
+    };
+    FILE* in = nullptr;
+    for (const char* path : downloadCandidates) {
+        in = fopen(path, "rb");
+        if (in) break;
+    }
     if (!in) {
         showToast("Put GalaxyAndroid_save.bin in Downloads!");
         return false;
     }
-    std::string dir = saveRoot + "/title/00010000/524d4750/data";
-    mkdir((saveRoot + "/title").c_str(), 0770);
-    mkdir((saveRoot + "/title/00010000").c_str(), 0770);
-    mkdir((saveRoot + "/title/00010000/524d4750").c_str(), 0770);
-    mkdir(dir.c_str(), 0770);
 
-    FILE* out = fopen(dstSave.c_str(), "wb");
-    if (!out) {
-        fclose(in);
-        showToast("Failed to write save.bin!");
-        return false;
-    }
+    std::vector<uint8_t> data;
     char buf[4096];
     size_t n;
     while ((n = fread(buf, 1, sizeof(buf), in)) > 0) {
-        fwrite(buf, 1, n, out);
+        data.insert(data.end(), buf, buf + n);
     }
     fclose(in);
-    fclose(out);
-    showToast("Imported save.bin from Downloads!");
+
+    if (data.empty()) {
+        showToast("Save file in Downloads is empty!");
+        return false;
+    }
+
+    // Import into all region directories (PAL, NTSC-U, NTSC-J, NTSC-K)
+    const char* titles[] = {"524d4750", "524d4745", "524d474a", "524d474b"};
+    mkdir((saveRoot + "/title").c_str(), 0770);
+    mkdir((saveRoot + "/title/00010000").c_str(), 0770);
+    for (const char* t : titles) {
+        std::string dir = saveRoot + "/title/00010000/" + t + "/data";
+        mkdir((saveRoot + "/title/00010000/" + t).c_str(), 0770);
+        mkdir(dir.c_str(), 0770);
+        FILE* out = fopen((dir + "/GameData.bin").c_str(), "wb");
+        if (out) {
+            fwrite(data.data(), 1, data.size(), out);
+            fclose(out);
+        }
+        FILE* outOld = fopen((dir + "/save.bin").c_str(), "wb");
+        if (outOld) {
+            fwrite(data.data(), 1, data.size(), outOld);
+            fclose(outOld);
+        }
+    }
+    // Also save to external mirror in GalaxyData/saves
+    mkdir("/sdcard/GalaxyData", 0770);
+    mkdir("/sdcard/GalaxyData/saves", 0770);
+    FILE* outExt = fopen("/sdcard/GalaxyData/saves/GameData.bin", "wb");
+    if (outExt) {
+        fwrite(data.data(), 1, data.size(), outExt);
+        fclose(outExt);
+    }
+
+    showToast("Imported save data successfully!");
     return true;
 }
 

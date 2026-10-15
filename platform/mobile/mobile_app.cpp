@@ -137,10 +137,10 @@ static void pollSensors(MobileApp& a) {
     if (wantGyro != sSensorsActive) {
         updateSensorsState(wantGyro);
     }
-    if (!sSensorsActive) return;
 
     ASensorEvent event;
     while (ASensorEventQueue_getEvents(sSensorQueue, &event, 1) > 0) {
+        if (!sSensorsActive) continue;
         if (event.type == ASENSOR_TYPE_GYROSCOPE) {
             float pitchRate = event.vector.x;
             float yawRate = event.vector.y;
@@ -973,8 +973,11 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
         int events;
         android_poll_source* source = nullptr;
         int timeout = (a.windowReady) ? 0 : 50;
-
-        while (ALooper_pollOnce(timeout, nullptr, &events, (void**)&source) >= 0) {
+        int ident;
+        while ((ident = ALooper_pollOnce(timeout, nullptr, &events, (void**)&source)) >= 0) {
+            if (ident == 3) {
+                pollSensors(a);
+            }
             if (source) {
                 source->process(app, source);
             }

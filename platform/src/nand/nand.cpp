@@ -110,6 +110,27 @@ s32 NANDClose(NANDFileInfo* info) {
     if (info->fileDescriptor >= 0) {
         if (info->accType != NAND_ACCESS_READ) {
             fsync(info->fileDescriptor);
+            // Auto-mirror GameData.bin to persistent external storage (/sdcard/GalaxyData/saves)
+            if (strstr(info->origPath, "GameData.bin")) {
+                std::string hp = hostPath(info->origPath);
+                FILE* in = fopen(hp.c_str(), "rb");
+                if (in) {
+                    mkdir("/sdcard/GalaxyData", 0770);
+                    mkdir("/sdcard/GalaxyData/saves", 0770);
+                    FILE* out = fopen("/sdcard/GalaxyData/saves/GameData.bin", "wb");
+                    if (out) {
+                        char buf[4096];
+                        size_t n;
+                        while ((n = fread(buf, 1, sizeof(buf), in)) > 0) {
+                            fwrite(buf, 1, n, out);
+                        }
+                        fflush(out);
+                        fclose(out);
+                        port_log("nand: mirrored %s -> /sdcard/GalaxyData/saves/GameData.bin", hp.c_str());
+                    }
+                    fclose(in);
+                }
+            }
         }
         close(info->fileDescriptor);
         info->fileDescriptor = -1;
