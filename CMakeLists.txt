@@ -153,8 +153,8 @@ if(ANDROID)
   set(GLUE_DIR ${ANDROID_NDK}/sources/android/native_app_glue)
 
   if(TARGET_MOBILE)
-    target_include_directories(game PRIVATE ${GLUE_DIR})
-    target_link_libraries(game PRIVATE EGL GLESv3 aaudio vulkan)
+    target_include_directories(game PRIVATE ${GLUE_DIR} ${ANDROID_NDK}/sources/third_party/shaderc/include)
+    target_link_libraries(game PRIVATE EGL GLESv3 aaudio vulkan ${ANDROID_NDK}/sources/third_party/shaderc/libs/c++_static/arm64-v8a/libshaderc.a)
   else()
     # The Khronos OpenXR loader (tools/fetch_openxr.sh puts it there).
     set(OPENXR_DIR ${CMAKE_SOURCE_DIR}/third_party/openxr/prefab/modules)

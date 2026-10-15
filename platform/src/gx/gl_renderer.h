@@ -18,6 +18,8 @@ struct EfbTarget {
     int width = 0, height = 0;
 };
 
+#ifndef _CAMERA_INFO_DEFINED_
+#define _CAMERA_INFO_DEFINED_
 // The frame's main 3D camera as recorded by the game (CMD_CAMERA).
 struct CameraInfo {
     bool valid = false;
@@ -32,6 +34,7 @@ struct CameraInfo {
     float player[3];  // player centre (world), with PORT_GX_CAMERA_PLAYER
     float playerUp[3];  // against the player's gravity (world); zero while it has none
 };
+#endif
 
 // How draws between the HUD markers are handled.
 enum class HudMode {

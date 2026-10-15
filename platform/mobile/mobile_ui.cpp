@@ -295,13 +295,17 @@ void Settings::load(const std::string& path) {
             else if (!strcmp(key, "haptics")) haptics = (val > 0.5f);
             else if (!strcmp(key, "target_fps")) targetFps = (int)val;  // 60, 90, or 120
             else if (!strcmp(key, "adaptive_fps")) adaptiveFps = (val > 0.5f);
-            else if (!strcmp(key, "full_touch_mode")) fullTouchMode = (val > 0.5f);
-            else if (!strcmp(key, "perf_hud")) perfHudMode = (int)val;
+            else if (!strcmp(key, "graphics_backend")) {
+                graphicsBackend = (int)val;
+                if (graphicsBackend == 1 && showControls) {
+                    graphicsBackend = 0;
+                }
+            }
         }
     }
     fclose(f);
-    LOGI("Loaded settings: show=%d, full=%d, touch=%d, hud=%d, op=%.2f, scale=%.2f, dpad=%d, fly=%d, skip=%d, infHp=%d, infLives=%d, infBits=%d, spd=%d, lang=%d, res=%d, hap=%d",
-         showControls, fullscreen, fullTouchMode, perfHudMode, opacity, scale, showDpad, modFly, modSkipCutscenes, modInfiniteHealth, modInfiniteLives, modInfiniteStarBits, gameSpeed, languageChoice, renderScale, haptics ? 1 : 0);
+    LOGI("Loaded settings: show=%d, full=%d, touch=%d, hud=%d, backend=%d, op=%.2f, scale=%.2f, dpad=%d, fly=%d, skip=%d, infHp=%d, infLives=%d, infBits=%d, spd=%d, lang=%d, res=%d, hap=%d",
+         showControls, fullscreen, fullTouchMode, perfHudMode, graphicsBackend, opacity, scale, showDpad, modFly, modSkipCutscenes, modInfiniteHealth, modInfiniteLives, modInfiniteStarBits, gameSpeed, languageChoice, renderScale, haptics ? 1 : 0);
 }
 
 void Settings::save(const std::string& path) const {
@@ -311,6 +315,7 @@ void Settings::save(const std::string& path) const {
     fprintf(f, "fullscreen=%d\n", fullscreen ? 1 : 0);
     fprintf(f, "full_touch_mode=%d\n", fullTouchMode ? 1 : 0);
     fprintf(f, "perf_hud=%d\n", perfHudMode);
+    fprintf(f, "graphics_backend=%d\n", graphicsBackend);
     fprintf(f, "opacity=%.2f\n", opacity);
     fprintf(f, "scale=%.2f\n", scale);
     fprintf(f, "dynamic_stick=%d\n", dynamicStick ? 1 : 0);
@@ -336,6 +341,7 @@ void Settings::save(const std::string& path) const {
     fclose(f);
     LOGI("Saved settings to %s", path.c_str());
 }
+
 
 UIOverlay::UIOverlay() {
     mPointerX = 0.0f; // Screen center
@@ -991,8 +997,8 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                                 mSettings.graphicsBackend = 0; // OpenGL ES 3.2
                                 showToast("Backend: OpenGL ES 3.2 (Active & Stable)");
                             } else {
-                                mSettings.graphicsBackend = 1; // Vulkan 1.1
-                                showToast("Backend: Vulkan 1.1 (Experimental WIP)");
+                                mSettings.graphicsBackend = 1; // Vulkan 1.0
+                                showToast("Backend: Vulkan 1.0 (Core Engine)");
                             }
                         }
                         // Row 14: Game Speed Multiplier (Turbo / Fast-Forward)
@@ -2156,7 +2162,7 @@ void UIOverlay::render(int screenW, int screenH) {
             // Row 13: Graphics Backend Segmented Button
             renderRow(722.0f * uiScale, 54.0f * uiScale, [&](float y) {
                 drawText("Graphics Backend", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                const char* backendOpts[2] = {"OpenGL ES 3.2", "Vulkan 1.1 (Exp)"};
+                const char* backendOpts[2] = {"OpenGL ES 3.2", "Vulkan 1.0"};
                 int bkIdx = (mSettings.graphicsBackend == 1) ? 1 : 0;
                 drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, backendOpts, 2, bkIdx);
             });
@@ -2204,7 +2210,7 @@ void UIOverlay::render(int screenW, int screenH) {
                 snprintf(gpuLine, sizeof(gpuLine), "GPU: %s", mGpuRendererName.empty() ? "OpenGL ES 3.2" : mGpuRendererName.c_str());
                 const char* resStr = (mSettings.renderScale == 0) ? "480p" : (mSettings.renderScale == 1) ? "720p" : (mSettings.renderScale == 2) ? "1080p" : "1440p";
                 snprintf(resLine, sizeof(resLine), "Display: %dx%d (%s Target • Hor+)", (int)w, (int)h, resStr);
-                snprintf(apiLine, sizeof(apiLine), "Active Engine: %s • Native ARM64", (mSettings.graphicsBackend == 1) ? "Vulkan 1.1" : "OpenGL ES 3.2");
+                snprintf(apiLine, sizeof(apiLine), "Active Engine: %s • Native ARM64", (mSettings.graphicsBackend == 1) ? "Vulkan 1.0" : "OpenGL ES 3.2");
 
                 drawText(gpuLine, cardX0 + 12.0f * uiScale, y + 18.0f * uiScale, 0.28f * uiScale, rgba(0.40f, 0.75f, 1.0f, 0.95f), 0);
                 drawText(resLine, cardX0 + 12.0f * uiScale, y + 34.0f * uiScale, 0.26f * uiScale, rgba(0.80f, 0.84f, 0.90f, 0.85f), 0);

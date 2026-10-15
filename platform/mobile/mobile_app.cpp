@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "gx/gl_renderer.h"
+#include "gx/vk_renderer.h"
 #include "mobile_ui.h"
 #include "port/input.h"
 #include "port/port.h"
@@ -52,6 +53,9 @@ struct MobileApp {
 
     gpu::EfbTarget efbTarget;
     bool targetReady = false;
+
+    gpu::VkTarget vkTarget{};
+    bool vkReady = false;
 
     bool gameBooted = false;
     std::string dataRoot;
@@ -284,6 +288,27 @@ bool initEgl(MobileApp& a) {
     return true;
 }
 
+static void enforceLandscapeOrientation(MobileApp& a) {
+    if (a.screenWidth < a.screenHeight && a.android && a.android->activity) {
+        LOGW("Surface detected in portrait (%dx%d)! Enforcing landscape mode...", a.screenWidth, a.screenHeight);
+        ANativeActivity* act = a.android->activity;
+        JNIEnv* env = nullptr;
+        act->vm->AttachCurrentThread(&env, nullptr);
+        if (env) {
+            jclass actClass = env->GetObjectClass(act->clazz);
+            if (actClass) {
+                jmethodID setOrient = env->GetMethodID(actClass, "setRequestedOrientation", "(I)V");
+                if (setOrient) {
+                    env->CallVoidMethod(act->clazz, setOrient, 0); // 0 = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                }
+                env->DeleteLocalRef(actClass);
+            }
+            if (env->ExceptionCheck()) env->ExceptionClear();
+            act->vm->DetachCurrentThread();
+        }
+    }
+}
+
 void updateViewport(MobileApp& a) {
     if (mobile_ui::get().settings().fullscreen) {
         a.vpX = 0;
@@ -292,12 +317,21 @@ void updateViewport(MobileApp& a) {
         a.vpH = a.screenHeight;
     } else {
         float targetAspect = 16.0f / 9.0f;
-        float screenAspect = (float)a.screenWidth / (float)a.screenHeight;
-        if (screenAspect > targetAspect) {
-            a.vpH = a.screenHeight;
-            a.vpW = (int)lroundf(a.screenHeight * targetAspect);
-            a.vpX = (a.screenWidth - a.vpW) / 2;
-            a.vpY = 0;
+        float screenAspect = (a.screenWidth >= a.screenHeight)
+            ? ((float)a.screenWidth / (float)a.screenHeight)
+            : ((float)a.screenHeight / (float)a.screenWidth);
+        if (a.screenWidth >= a.screenHeight) {
+            if (screenAspect > targetAspect) {
+                a.vpH = a.screenHeight;
+                a.vpW = (int)lroundf(a.screenHeight * targetAspect);
+                a.vpX = (a.screenWidth - a.vpW) / 2;
+                a.vpY = 0;
+            } else {
+                a.vpW = a.screenWidth;
+                a.vpH = (int)lroundf(a.screenWidth / targetAspect);
+                a.vpX = 0;
+                a.vpY = (a.screenHeight - a.vpH) / 2;
+            }
         } else {
             a.vpW = a.screenWidth;
             a.vpH = (int)lroundf(a.screenWidth / targetAspect);
@@ -327,6 +361,7 @@ bool createSurface(MobileApp& a) {
 
     eglQuerySurface(a.display, a.surface, EGL_WIDTH, &a.screenWidth);
     eglQuerySurface(a.display, a.surface, EGL_HEIGHT, &a.screenHeight);
+    enforceLandscapeOrientation(a);
     eglSwapInterval(a.display, 1);
 
     LOGI("Window surface ready: %dx%d (GL: %s)", a.screenWidth, a.screenHeight, (const char*)glGetString(GL_RENDERER));
@@ -343,17 +378,19 @@ bool createSurface(MobileApp& a) {
 
     // Allocate offscreen target (aspect-matched when in fullscreen mode)
     int scaleChoice = mobile_ui::get().settings().renderScale;
+    int dispH = std::min(a.screenWidth, a.screenHeight);
+    int dispW = std::max(a.screenWidth, a.screenHeight);
     int targetH = 1080;
     if (scaleChoice == 0) targetH = 480;       // Native 480p (blazing fast for low-end devices)
     else if (scaleChoice == 1) targetH = 720;  // 720p HD (great for Helio G81/G99)
     else if (scaleChoice == 2) targetH = 1080; // 1080p FHD
     else if (scaleChoice == 3) targetH = 1440; // 1440p 2K Ultra
-    else if (a.screenHeight > 1080) {
-        targetH = std::min(a.screenHeight, 1440);
+    else if (dispH > 1080) {
+        targetH = std::min(dispH, 1440);
     }
     int targetW;
     if (mobile_ui::get().settings().fullscreen) {
-        float nativeAspect = (float)a.screenWidth / (float)a.screenHeight;
+        float nativeAspect = (float)dispW / (float)dispH;
         targetW = (int)lroundf(targetH * nativeAspect);
     } else {
         targetW = (targetH * 16) / 9;
@@ -363,7 +400,7 @@ bool createSurface(MobileApp& a) {
         if (newTarget.fbo == 0 && targetH > 720) {
             LOGW("Failed to allocate %dx%d target, falling back to 720p", targetW, targetH);
             targetH = 720;
-            targetW = mobile_ui::get().settings().fullscreen ? (int)lroundf(720.0f * ((float)a.screenWidth / (float)a.screenHeight)) : (720 * 16) / 9;
+            targetW = mobile_ui::get().settings().fullscreen ? (int)lroundf(720.0f * ((float)dispW / (float)dispH)) : (720 * 16) / 9;
             newTarget = r.createTarget(targetW, targetH);
         }
         if (newTarget.fbo != 0) {
@@ -639,19 +676,77 @@ void onAppCmd(android_app* app, int32_t cmd) {
     if (!a) return;
 
     switch (cmd) {
-    case APP_CMD_INIT_WINDOW:
-        LOGI("APP_CMD_INIT_WINDOW");
-        initEgl(*a);
-        createSurface(*a);
+    case APP_CMD_INIT_WINDOW: {
+        bool useVulkan = (mobile_ui::get().settings().graphicsBackend == 1 && !mobile_ui::get().settings().showControls);
+        if (useVulkan) {
+            LOGI("Selected Vulkan 1.0 backend (showControls=0), initializing VkRenderer...");
+            if (gpu::VkRenderer::get().init(app->window)) {
+                a->vkReady = true;
+                a->screenWidth = ANativeWindow_getWidth(app->window);
+                a->screenHeight = ANativeWindow_getHeight(app->window);
+                enforceLandscapeOrientation(*a);
+                a->windowReady = true;
+
+                int scaleChoice = mobile_ui::get().settings().renderScale;
+                int dispH = std::min(a->screenWidth, a->screenHeight);
+                int dispW = std::max(a->screenWidth, a->screenHeight);
+                int targetH = 1080;
+                if (scaleChoice == 0) targetH = 480;
+                else if (scaleChoice == 1) targetH = 720;
+                else if (scaleChoice == 2) targetH = 1080;
+                else if (scaleChoice == 3) targetH = 1440;
+                else if (dispH > 1080) targetH = std::min(dispH, 1440);
+
+                int targetW;
+                if (mobile_ui::get().settings().fullscreen) {
+                    float nativeAspect = (float)dispW / (float)dispH;
+                    targetW = (int)lroundf(targetH * nativeAspect);
+                } else {
+                    targetW = (targetH * 16) / 9;
+                }
+
+                if (a->vkTarget.framebuffer) {
+                    gpu::VkRenderer::get().destroyTarget(a->vkTarget);
+                }
+                a->vkTarget = gpu::VkRenderer::get().createTarget(targetW, targetH);
+                a->targetReady = (a->vkTarget.framebuffer != VK_NULL_HANDLE);
+                updateViewport(*a);
+                LOGI("Vulkan 1.0 native renderer initialized (%dx%d), offscreen target: %dx%d",
+                     a->screenWidth, a->screenHeight, targetW, targetH);
+            } else {
+                LOGE("Vulkan 1.0 initialization failed; falling back to OpenGL ES 3.2");
+                a->vkReady = false;
+                initEgl(*a);
+                createSurface(*a);
+            }
+        } else {
+            initEgl(*a);
+            createSurface(*a);
+        }
         break;
+    }
     case APP_CMD_TERM_WINDOW:
         LOGI("APP_CMD_TERM_WINDOW");
-        destroySurface(*a);
+        if (a->vkReady) {
+            if (a->vkTarget.framebuffer) {
+                gpu::VkRenderer::get().destroyTarget(a->vkTarget);
+            }
+            gpu::VkRenderer::get().shutdown();
+            a->vkReady = false;
+            a->windowReady = false;
+        } else {
+            destroySurface(*a);
+        }
         break;
     case APP_CMD_WINDOW_RESIZED:
     case APP_CMD_CONFIG_CHANGED:
         LOGI("APP_CMD_WINDOW_RESIZED / CONFIG_CHANGED");
-        if (a->surface != EGL_NO_SURFACE) {
+        if (a->vkReady) {
+            gpu::VkRenderer::get().onWindowResized(app->window);
+            a->screenWidth = ANativeWindow_getWidth(app->window);
+            a->screenHeight = ANativeWindow_getHeight(app->window);
+            updateViewport(*a);
+        } else if (a->surface != EGL_NO_SURFACE) {
             destroySurface(*a);
             createSurface(*a);
         }
@@ -666,7 +761,16 @@ void onAppCmd(android_app* app, int32_t cmd) {
         break;
     case APP_CMD_DESTROY:
         LOGI("APP_CMD_DESTROY");
-        destroySurface(*a);
+        if (a->vkReady) {
+            if (a->vkTarget.framebuffer) {
+                gpu::VkRenderer::get().destroyTarget(a->vkTarget);
+            }
+            gpu::VkRenderer::get().shutdown();
+            a->vkReady = false;
+            a->windowReady = false;
+        } else {
+            destroySurface(*a);
+        }
         break;
     default:
         break;
@@ -869,92 +973,154 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
 
 
         // Presentation & Render Loop
-        gpu::Renderer& r = gpu::renderer();
-        bool newFrame = r.update();
+        if (a.vkReady) {
+            gpu::VkRenderer& vkr = gpu::VkRenderer::get();
+            bool newFrame = vkr.update();
 
-        if (newFrame) {
-            gPresentedFrames.store(r.frameNumber());
+            if (newFrame) {
+                gPresentedFrames.store(vkr.frameNumber());
 
-            // Check if offscreen target dimensions need to change (e.g. toggled fullscreen or resolution scale)
-            int scaleChoice = mobile_ui::get().settings().renderScale;
-            int desiredTargetH = 1080;
-            if (scaleChoice == 0) desiredTargetH = 480;       // Native 480p (max performance)
-            else if (scaleChoice == 1) desiredTargetH = 720;  // 720p HD (smooth performance on budget chips)
-            else if (scaleChoice == 2) desiredTargetH = 1080; // 1080p Full HD
-            else if (scaleChoice == 3) desiredTargetH = 1440; // 1440p 2K Ultra
-            else if (a.screenHeight > 1080) {
-                desiredTargetH = std::min(a.screenHeight, 1440);
-            }
-            int desiredTargetW;
-            if (mobile_ui::get().settings().fullscreen) {
-                float nativeAspect = (float)a.screenWidth / (float)a.screenHeight;
-                desiredTargetW = (int)lroundf(desiredTargetH * nativeAspect);
-            } else {
-                desiredTargetW = (desiredTargetH * 16) / 9;
-            }
-            if (a.targetReady && (a.efbTarget.width != desiredTargetW || a.efbTarget.height != desiredTargetH)) {
-                gpu::EfbTarget newTarget = r.createTarget(desiredTargetW, desiredTargetH);
-                if (newTarget.fbo != 0) {
-                    r.destroyTarget(a.efbTarget);
-                    a.efbTarget = newTarget;
-                    updateViewport(a);
-                    LOGI("Resized offscreen EfbTarget: %dx%d (fullscreen=%d)", desiredTargetW, desiredTargetH, mobile_ui::get().settings().fullscreen ? 1 : 0);
+                int scaleChoice = mobile_ui::get().settings().renderScale;
+                int desiredTargetH = 1080;
+                if (scaleChoice == 0) desiredTargetH = 480;       // Native 480p
+                else if (scaleChoice == 1) desiredTargetH = 720;  // 720p HD
+                else if (scaleChoice == 2) desiredTargetH = 1080; // 1080p FHD
+                else if (scaleChoice == 3) desiredTargetH = 1440; // 1440p 2K
+                else if (a.screenHeight > 1080) {
+                    desiredTargetH = std::min(a.screenHeight, 1440);
+                }
+                int desiredTargetW;
+                if (mobile_ui::get().settings().fullscreen) {
+                    float nativeAspect = (float)a.screenWidth / (float)a.screenHeight;
+                    desiredTargetW = (int)lroundf(desiredTargetH * nativeAspect);
                 } else {
-                    LOGE("Failed to resize offscreen EfbTarget to %dx%d; preserving current %dx%d target",
-                         desiredTargetW, desiredTargetH, a.efbTarget.width, a.efbTarget.height);
+                    desiredTargetW = (desiredTargetH * 16) / 9;
                 }
-            }
+                if (a.targetReady && (a.vkTarget.width != desiredTargetW || a.vkTarget.height != desiredTargetH)) {
+                    vkr.destroyTarget(a.vkTarget);
+                    a.vkTarget = vkr.createTarget(desiredTargetW, desiredTargetH);
+                    a.targetReady = (a.vkTarget.framebuffer != VK_NULL_HANDLE);
+                    updateViewport(a);
+                    LOGI("Resized Vulkan target: %dx%d (fullscreen=%d)", desiredTargetW, desiredTargetH, mobile_ui::get().settings().fullscreen ? 1 : 0);
+                }
 
-            // Monoscopic rendering into offscreen target
-            r.render(a.efbTarget, nullptr, nullptr, gpu::HudMode::Inline);
+                // Render into offscreen target
+                vkr.render(a.vkTarget, nullptr, nullptr, gpu::HudMode::Inline);
 
-            // Clean GL states before clearing backbuffer and blitting
-            glBindFramebuffer(GL_FRAMEBUFFER, 0);
-            glViewport(0, 0, a.screenWidth, a.screenHeight);
-            glDisable(GL_SCISSOR_TEST);
-            glDisable(GL_DEPTH_TEST);
-            glDisable(GL_CULL_FACE);
-            glDisable(GL_BLEND);
-            glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+                // Present to swapchain with pillarboxing
+                updateViewport(a);
+                vkr.present(a.vkTarget, a.vpX, a.vpY, a.vpW, a.vpH);
 
-            // Clear black pillarbox borders
-            glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-            glClear(GL_COLOR_BUFFER_BIT);
-
-            // Blit game image to viewport (pillarbox or fullscreen)
-            updateViewport(a);
-            glBindFramebuffer(GL_READ_FRAMEBUFFER, a.efbTarget.fbo);
-            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-            glBlitFramebuffer(0, 0, a.efbTarget.width, a.efbTarget.height,
-                              a.vpX, a.vpY, a.vpX + a.vpW, a.vpY + a.vpH,
-                              GL_COLOR_BUFFER_BIT, GL_LINEAR);
-
-            // Render on-screen controls HUD & Settings overlay
-            mobile_ui::get().render(a.screenWidth, a.screenHeight);
-
-            eglSwapBuffers(a.display, a.surface);
-
-            // Precise frame pacer (60, 90, 120 FPS target, scaled by game speed)
-            static int64_t lastFrameNs = 0;
-            int targetFps = mobile_ui::get().settings().targetFps;
-            float speed = port_get_game_speed();
-            if (speed > 1.05f) {
-                targetFps = (int)((float)targetFps * speed);
-            }
-            if (targetFps > 0) {
-                int64_t framePeriodNs = 1000000000ll / targetFps;
-                int64_t nowNs = port_host_time_ns();
-                int64_t elapsedNs = nowNs - lastFrameNs;
-                if (elapsedNs < framePeriodNs && lastFrameNs != 0) {
-                    int64_t sleepUs = (framePeriodNs - elapsedNs) / 1000;
-                    if (sleepUs > 300) {
-                        usleep((useconds_t)sleepUs);
+                // Frame pacing
+                static int64_t lastVkFrameNs = 0;
+                int targetFps = mobile_ui::get().settings().targetFps;
+                float speed = port_get_game_speed();
+                if (speed > 1.05f) {
+                    targetFps = (int)((float)targetFps * speed);
+                }
+                if (targetFps > 0) {
+                    int64_t framePeriodNs = 1000000000ll / targetFps;
+                    int64_t nowNs = port_host_time_ns();
+                    int64_t elapsedNs = nowNs - lastVkFrameNs;
+                    if (elapsedNs < framePeriodNs && lastVkFrameNs != 0) {
+                        int64_t sleepUs = (framePeriodNs - elapsedNs) / 1000;
+                        if (sleepUs > 300) {
+                            usleep((useconds_t)sleepUs);
+                        }
                     }
+                    lastVkFrameNs = port_host_time_ns();
                 }
-                lastFrameNs = port_host_time_ns();
+            } else {
+                usleep(1000);
             }
         } else {
-            if (mobile_ui::get().needsRedraw()) {
+            // OpenGL ES fallback loop
+            gpu::Renderer& r = gpu::renderer();
+            bool newFrame = r.update();
+
+            if (newFrame) {
+                gPresentedFrames.store(r.frameNumber());
+
+                // Check if offscreen target dimensions need to change (e.g. toggled fullscreen or resolution scale)
+                int scaleChoice = mobile_ui::get().settings().renderScale;
+                int desiredTargetH = 1080;
+                if (scaleChoice == 0) desiredTargetH = 480;       // Native 480p (max performance)
+                else if (scaleChoice == 1) desiredTargetH = 720;  // 720p HD (smooth performance on budget chips)
+                else if (scaleChoice == 2) desiredTargetH = 1080; // 1080p Full HD
+                else if (scaleChoice == 3) desiredTargetH = 1440; // 1440p 2K Ultra
+                else if (a.screenHeight > 1080) {
+                    desiredTargetH = std::min(a.screenHeight, 1440);
+                }
+                int desiredTargetW;
+                if (mobile_ui::get().settings().fullscreen) {
+                    float nativeAspect = (float)a.screenWidth / (float)a.screenHeight;
+                    desiredTargetW = (int)lroundf(desiredTargetH * nativeAspect);
+                } else {
+                    desiredTargetW = (desiredTargetH * 16) / 9;
+                }
+                if (a.targetReady && (a.efbTarget.width != desiredTargetW || a.efbTarget.height != desiredTargetH)) {
+                    gpu::EfbTarget newTarget = r.createTarget(desiredTargetW, desiredTargetH);
+                    if (newTarget.fbo != 0) {
+                        r.destroyTarget(a.efbTarget);
+                        a.efbTarget = newTarget;
+                        updateViewport(a);
+                        LOGI("Resized offscreen EfbTarget: %dx%d (fullscreen=%d)", desiredTargetW, desiredTargetH, mobile_ui::get().settings().fullscreen ? 1 : 0);
+                    } else {
+                        LOGE("Failed to resize offscreen EfbTarget to %dx%d; preserving current %dx%d target",
+                             desiredTargetW, desiredTargetH, a.efbTarget.width, a.efbTarget.height);
+                    }
+                }
+
+                // Monoscopic rendering into offscreen target
+                r.render(a.efbTarget, nullptr, nullptr, gpu::HudMode::Inline);
+
+                // Clean GL states before clearing backbuffer and blitting
+                glBindFramebuffer(GL_FRAMEBUFFER, 0);
+                glViewport(0, 0, a.screenWidth, a.screenHeight);
+                glDisable(GL_SCISSOR_TEST);
+                glDisable(GL_DEPTH_TEST);
+                glDisable(GL_CULL_FACE);
+                glDisable(GL_BLEND);
+                glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+
+                // Clear black pillarbox borders
+                glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+                glClear(GL_COLOR_BUFFER_BIT);
+
+                // Blit game image to viewport (pillarbox or fullscreen)
+                updateViewport(a);
+                glBindFramebuffer(GL_READ_FRAMEBUFFER, a.efbTarget.fbo);
+                glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+                glBlitFramebuffer(0, 0, a.efbTarget.width, a.efbTarget.height,
+                                  a.vpX, a.vpY, a.vpX + a.vpW, a.vpY + a.vpH,
+                                  GL_COLOR_BUFFER_BIT, GL_LINEAR);
+
+                // Render on-screen controls HUD & Settings overlay
+                mobile_ui::get().render(a.screenWidth, a.screenHeight);
+
+                eglSwapBuffers(a.display, a.surface);
+
+                // Precise frame pacer (60, 90, 120 FPS target, scaled by game speed)
+                static int64_t lastFrameNs = 0;
+                int targetFps = mobile_ui::get().settings().targetFps;
+                float speed = port_get_game_speed();
+                if (speed > 1.05f) {
+                    targetFps = (int)((float)targetFps * speed);
+                }
+                if (targetFps > 0) {
+                    int64_t framePeriodNs = 1000000000ll / targetFps;
+                    int64_t nowNs = port_host_time_ns();
+                    int64_t elapsedNs = nowNs - lastFrameNs;
+                    if (elapsedNs < framePeriodNs && lastFrameNs != 0) {
+                        int64_t sleepUs = (framePeriodNs - elapsedNs) / 1000;
+                        if (sleepUs > 300) {
+                            usleep((useconds_t)sleepUs);
+                        }
+                    }
+                    lastFrameNs = port_host_time_ns();
+                }
+            } else {
+                if (mobile_ui::get().needsRedraw()) {
                 glBindFramebuffer(GL_FRAMEBUFFER, 0);
                 glViewport(0, 0, a.screenWidth, a.screenHeight);
                 glDisable(GL_SCISSOR_TEST);
@@ -991,6 +1157,7 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
             }
         }
     }
+}
 
     LOGI("GalaxyMobile exiting cleanly");
     destroySurface(a);

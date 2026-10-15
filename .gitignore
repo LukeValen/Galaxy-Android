@@ -38,3 +38,10 @@ tools/*.jar
 compile_commands.json
 live_*.png
 phone_*.png
+test_*.png
+mali_*.png
+current_*.png
+out_*.png
+save_*.png
+*.bin
+*.bdl

@@ -32,8 +32,8 @@ inline float befloat(const u8* p) {
 
 // Command-processor (CP) register file relevant to vertex fetch.
 struct CPState {
-    u32 matIndexA = 0;  // 0x30
-    u32 matIndexB = 0;  // 0x40
+    u32 matIndexA = 0x27921780;  // 0x30: pos=0, tex0=30, tex1=33, tex2=36, tex3=39 (Hardware GX defaults)
+    u32 matIndexB = 0x00cf0b6a;  // 0x40: tex4=42, tex5=45, tex6=48, tex7=51
     u32 vcdLo = 0;      // 0x50
     u32 vcdHi = 0;      // 0x60
     u32 vatA[8] = {};   // 0x70+n
@@ -79,6 +79,23 @@ struct GpuState {
         // 0x100C / 0x100D: Material 0 & 1 (white: RGBA 255, 255, 255, 255)
         xf.regs[0x0C] = 0xFFFFFFFF;
         xf.regs[0x0D] = 0xFFFFFFFF;
+        // Default GX matrix indices (GXInit.c defaults: pos=0, tex0=30, tex1=33, tex2=36, etc.):
+        xf.regs[0x18] = 0x27921780;  // 0x1018 MatrixIndex0: pos=0, tex0..3=30..39
+        xf.regs[0x19] = 0x00cf0b6a;  // 0x1019 MatrixIndex1: tex4..7=42..51
+
+        // Hardwired XF identity matrix at rows 60..63 (GX_IDENTITY = 60 = 0x3C):
+        // Pos/Tex matrix memory (rows 60..63, addresses 240..255):
+        xf.mem[240] = 1.0f; xf.mem[241] = 0.0f; xf.mem[242] = 0.0f; xf.mem[243] = 0.0f;
+        xf.mem[244] = 0.0f; xf.mem[245] = 1.0f; xf.mem[246] = 0.0f; xf.mem[247] = 0.0f;
+        xf.mem[248] = 0.0f; xf.mem[249] = 0.0f; xf.mem[250] = 1.0f; xf.mem[251] = 0.0f;
+        xf.mem[252] = 0.0f; xf.mem[253] = 0.0f; xf.mem[254] = 0.0f; xf.mem[255] = 1.0f;
+
+        // Post-transform matrix memory rows 60..63 (addresses 1520..1535):
+        xf.mem[1520] = 1.0f; xf.mem[1521] = 0.0f; xf.mem[1522] = 0.0f; xf.mem[1523] = 0.0f;
+        // GX_PTIDENTITY (125 - 64 = 61): 3x4 identity matrix starting at row 61 (indices 1524..1535):
+        xf.mem[1524] = 1.0f; xf.mem[1525] = 0.0f; xf.mem[1526] = 0.0f; xf.mem[1527] = 0.0f;
+        xf.mem[1528] = 0.0f; xf.mem[1529] = 1.0f; xf.mem[1530] = 0.0f; xf.mem[1531] = 0.0f;
+        xf.mem[1532] = 0.0f; xf.mem[1533] = 0.0f; xf.mem[1534] = 1.0f; xf.mem[1535] = 0.0f;
     }
 };
 

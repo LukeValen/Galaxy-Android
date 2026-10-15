@@ -125,9 +125,11 @@ static void writeCP(u8 reg, u32 value) {
     switch (reg & 0xF0) {
     case 0x30:
         cp.matIndexA = value;
+        g.xf.regs[0x18] = value;
         break;
     case 0x40:
         cp.matIndexB = value;
+        g.xf.regs[0x19] = value;
         break;
     case 0x50:
         cp.vcdLo = value;
@@ -159,12 +161,20 @@ static void writeCP(u8 reg, u32 value) {
 }
 
 static void writeXF(u32 addr, u32 value) {
+    if (addr >= 240 && addr <= 255) {
+        return;  // Hardwired identity matrix ROM (GX_IDENTITY)
+    }
     if (addr < 0x1000) {
         float f;
         memcpy(&f, &value, 4);
         g.xf.mem[addr] = f;
     } else if (addr < 0x1100) {
         g.xf.regs[addr - 0x1000] = value;
+        if (addr == 0x1018) {
+            g.cp.matIndexA = value;
+        } else if (addr == 0x1019) {
+            g.cp.matIndexB = value;
+        }
     }
 }
 

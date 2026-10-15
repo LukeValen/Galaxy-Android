@@ -301,7 +301,8 @@ u32 loadVerticesT(WordBuffer& out, const u8* data, u32 count, int vat, u32 strid
     // different part of her texture every frame.
     u32 defaultTexMtx[8];
     for (int i = 0; i < 8; i++) {
-        defaultTexMtx[i] = i < 4 ? (cp.matIndexA >> (6 * (i + 1))) & 63 : (cp.matIndexB >> (6 * (i - 4))) & 63;
+        u32 m = i < 4 ? (cp.matIndexA >> (6 * (i + 1))) & 63 : (cp.matIndexB >> (6 * (i - 4))) & 63;
+        defaultTexMtx[i] = (m != 0) ? m : 60;
     }
 
     size_t base = out.size();
@@ -827,7 +828,14 @@ struct Recorder final : Backend {
         }
     }
 
-    void cpWrite(u32, u32) override { noteListLoad(); }
+    void cpWrite(u32 reg, u32) override {
+        noteListLoad();
+        if ((reg & 0xF0) == 0x30) {
+            xfWrite(0x1018, 1);
+        } else if ((reg & 0xF0) == 0x40) {
+            xfWrite(0x1019, 1);
+        }
+    }
 
     void efbCopy(bool toXfb, bool clear) override {
         noteListLoad();

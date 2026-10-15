@@ -222,7 +222,7 @@ std::string genVertexShader(const ShaderUid& u) {
     o.w("  vec4 vclr1 = %s;\n", (f & VF_CLR1) ? "a_clr1" : "vec4(1.0)");
     for (int c = 0; c < 2; c++) {
         if ((uint32_t)c >= u.numChans) {
-            o.w("  v_clr%d = vec4(0.0);\n", c);
+            o.w("  v_clr%d = vclr%d;\n", c, c);
             continue;
         }
         for (int alpha = 0; alpha < 2; alpha++) {
@@ -279,7 +279,11 @@ std::string genVertexShader(const ShaderUid& u) {
                 o.w("      lit += att * %s * lcol.%s;\n", dif, sw);
                 o.w("    }\n");
             }
-            o.w("    v_clr%d.%s = %s * clamp(isnan(lit) ? %s(0.0) : lit, 0.0, 1.0);\n  }\n", c, sw, mat, alpha ? "float" : "vec3");
+            if (alpha) {
+                o.w("    v_clr%d.%s = %s * clamp(isnan(lit) ? 0.0 : lit, 0.0, 1.0);\n  }\n", c, sw, mat);
+            } else {
+                o.w("    v_clr%d.%s = %s * clamp(any(isnan(lit)) ? vec3(0.0) : lit, 0.0, 1.0);\n  }\n", c, sw, mat);
+            }
         }
     }
 
@@ -345,17 +349,21 @@ std::string genVertexShader(const ShaderUid& u) {
         }
         o.w("    uint tr = slotRow(rb, %uu, midx);\n", (unsigned)kRecPosSlots);
         if (stq) {
-            o.w("    vec3 t = mulRows(tr, src);\n");
+            o.w("    vec3 t = (midx >= 60 || %s) ? src.xyz : mulRows(tr, src);\n", src >= 5 ? "midx < 30" : "false");
         } else {
-            o.w("    vec3 t = vec3(dot(fetch_rows(tr), src), dot(fetch_rows(tr + 1u), src), 1.0);\n");
+            o.w("    vec3 t = (midx >= 60 || %s) ? vec3(src.xy, 1.0) : vec3(dot(fetch_rows(tr), src), dot(fetch_rows(tr + 1u), src), 1.0);\n", src >= 5 ? "midx < 30" : "false");
         }
         if (u.dualTex) {
             uint32_t post = u.postMtxInfo[i];
             if ((post >> 8) & 1) {
                 o.w("    t = normalize(t);\n");
             }
-            o.w("    vec4 t4 = vec4(t, 1.0);\n");
-            o.w("    t = mulRows(fetch_recs(rb + %uu), t4);\n", (unsigned)kRecPost + i);
+            if ((post & 63) == 61) {
+                // GX_PTIDENTITY (125 - 64 = 61): identity post-transform
+            } else {
+                o.w("    vec4 t4 = vec4(t, 1.0);\n");
+                o.w("    t = mulRows(fetch_recs(rb + %uu), t4);\n", (unsigned)kRecPost + i);
+            }
         }
         if ((u.screenTexGens >> i) & 1) {
             // A capture of the screen sampled where the vertex lands on it.
@@ -530,8 +538,8 @@ std::string genFragmentShader(const ShaderUid& u) {
         uint32_t scale = (u.indScale[s / 2] >> ((s & 1) * 8)) & 0xFF;
         uint32_t scaleS = scale & 15, scaleT = (scale >> 4) & 15;
         if (coord < u.numTexGens) {
-            o.w("  vec3 ind%u = floor(texture(s_tex%u, projUv(v_tex%u) / vec2(%.1f, %.1f), texSize[%u].x).abg * 255.0 + 0.5);\n", s, map, coord,
-                (double)(1u << (scaleS & 15)), (double)(1u << (scaleT & 15)), map);
+            o.w("  vec3 ind%u = floor(texture(s_tex%u, projUv(v_tex%u) / vec2(%.1f, %.1f)).abg * 255.0 + 0.5);\n", s, map, coord,
+                (double)(1u << (scaleS & 15)), (double)(1u << (scaleT & 15)));
         } else {
             o.w("  vec3 ind%u = vec3(0.0);\n", s);
         }
@@ -569,14 +577,14 @@ std::string genFragmentShader(const ShaderUid& u) {
             }
         }
         if (en) {
-            o.w("  tex = ivec4(round(clamp(texture(s_tex%u, %s, texSize[%u].x)%s, 0.0, 1.0) * 255.0));\n", map, uv.c_str(), map, swapString(u, tswap).c_str());
+            o.w("  tex = ivec4(round(clamp(texture(s_tex%u, %s)%s, 0.0, 1.0) * 255.0));\n", map, uv.c_str(), swapString(u, tswap).c_str());
             if (u.zTex) {
                 o.w("  ztex = tex;\n");
             }
         } else {
             o.w("  tex = ivec4(0);\n");
         }
-        const char* rasSrc = chan == 0 ? "v_clr0" : chan == 1 ? "v_clr1" : "vec4(0.0)";
+        const char* rasSrc = (chan == 0 || chan == 2 || chan == 4) ? "v_clr0" : (chan == 1 || chan == 3 || chan == 5) ? "v_clr1" : "vec4(0.0)";
         o.w("  ras = ivec4(round(clamp(%s, 0.0, 1.0)%s * 255.0));\n", rasSrc, swapString(u, rswap).c_str());
         o.w("  kc = %s;\n  ka = %s;\n", konstColor(kcsel).c_str(), konstAlpha(kasel).c_str());
         // Inputs A, B and C are the low 8 bits of their source (a register's
@@ -640,8 +648,8 @@ std::string genFragmentShader(const ShaderUid& u) {
             }
         }
     }
-    // The TEV's output is 8 bits wide: clamp RGB and mask alpha (Mario's eyelids rely on alpha for test).
-    o.w("  ivec4 outi = ivec4(clamp(%s.rgb, ivec3(0), ivec3(255)), %s.a & 255);\n", kDest[lastColorDest], kDest[lastAlphaDest]);
+    // The TEV's output is 8 bits wide: clamp RGB and Alpha (prevent wrap-around on over-range combiner outputs like eyes/eyelids).
+    o.w("  ivec4 outi = clamp(ivec4(%s.rgb, %s.a), ivec4(0), ivec4(255));\n", kDest[lastColorDest], kDest[lastAlphaDest]);
     o.w("  vec4 outc = vec4(outi) / 255.0;\n");
     // Alpha test (on the 8-bit value).
     {
