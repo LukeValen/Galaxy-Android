@@ -126,7 +126,7 @@ if(TARGET_MOBILE)
 endif()
 
 add_library(game SHARED $<TARGET_OBJECTS:decomp> ${PLATFORM_SRCS})
-target_include_directories(game PRIVATE ${DECOMP_INCLUDES} ${CMAKE_SOURCE_DIR}/platform/src)
+target_include_directories(game PRIVATE ${DECOMP_INCLUDES} ${CMAKE_SOURCE_DIR}/platform ${CMAKE_SOURCE_DIR}/platform/src)
 target_compile_definitions(game PRIVATE ${PORT_DEFS} PORT_PLATFORM_CODE=1)
 if(TARGET_MOBILE)
   target_compile_definitions(game PRIVATE TARGET_MOBILE=1)

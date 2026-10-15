@@ -759,9 +759,9 @@ void onAppCmd(android_app* app, int32_t cmd) {
 
     switch (cmd) {
     case APP_CMD_INIT_WINDOW: {
-        bool useVulkan = (mobile_ui::get().settings().graphicsBackend == 1 && !mobile_ui::get().settings().showControls);
+        bool useVulkan = (mobile_ui::get().settings().graphicsBackend == 1);
         if (useVulkan) {
-            LOGI("Selected Vulkan 1.0 backend (showControls=0), initializing VkRenderer...");
+            LOGI("Selected Vulkan 1.0 backend, initializing VkRenderer with native touch controls...");
             if (gpu::VkRenderer::get().init(app->window)) {
                 a->vkReady = true;
                 a->screenWidth = ANativeWindow_getWidth(app->window);
@@ -1125,7 +1125,17 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
                     lastVkFrameNs = port_host_time_ns();
                 }
             } else {
-                usleep(1000);
+                if (mobile_ui::get().needsRedraw() || !vkr.hasFrame()) {
+                    if (a.targetReady) {
+                        updateViewport(a);
+                        vkr.present(a.vkTarget, a.vpX, a.vpY, a.vpW, a.vpH);
+                    }
+                    if (!vkr.hasFrame()) {
+                        usleep(16000);
+                    }
+                } else {
+                    usleep(1000);
+                }
             }
         } else {
             // OpenGL ES fallback loop

@@ -81,6 +81,11 @@ bool VkRenderer::init(ANativeWindow* window) {
         return false;
     }
 
+    if (!createUiPipeline()) {
+        LOGE("Failed to create Vulkan UI pipeline");
+        return false;
+    }
+
     // 1x1 dummy white texture for unbound sampler units
     {
         VkImageCreateInfo ici{};
@@ -206,6 +211,9 @@ void VkRenderer::shutdown() {
         if (mPresentSampler != VK_NULL_HANDLE) vkDestroySampler(mDevice, mPresentSampler, nullptr);
         mPresentDescSets.clear();
 
+        // UI overlay resources
+        destroyUiPipeline();
+
         // Frame resources
         for (auto& fr : mFrameRes) {
             if (fr.vbo) vkDestroyBuffer(mDevice, fr.vbo, nullptr);
@@ -222,6 +230,8 @@ void VkRenderer::shutdown() {
             if (fr.vtxRecMem) vkFreeMemory(mDevice, fr.vtxRecMem, nullptr);
             if (fr.eyeUbo) vkDestroyBuffer(mDevice, fr.eyeUbo, nullptr);
             if (fr.eyeMem) vkFreeMemory(mDevice, fr.eyeMem, nullptr);
+            if (fr.uiVbo) vkDestroyBuffer(mDevice, fr.uiVbo, nullptr);
+            if (fr.uiVboMem) vkFreeMemory(mDevice, fr.uiVboMem, nullptr);
             fr = {};
         }
 
@@ -812,6 +822,491 @@ void main() {
     vkDestroyShaderModule(mDevice, fsMod, nullptr);
 
     return res == VK_SUCCESS;
+}
+
+bool VkRenderer::createUiPipeline() {
+    // 1. Descriptor Set Layout: Binding 0 is font sampler
+    VkDescriptorSetLayoutBinding binding{0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = 1;
+    layoutInfo.pBindings = &binding;
+
+    if (vkCreateDescriptorSetLayout(mDevice, &layoutInfo, nullptr, &mUiDescLayout) != VK_SUCCESS) {
+        LOGE("Failed to create UI descriptor set layout");
+        return false;
+    }
+
+    // 2. Pipeline Layout with push constants for orthographic projection (mat4 = 64 bytes)
+    VkPushConstantRange pcr{};
+    pcr.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    pcr.offset = 0;
+    pcr.size = sizeof(float) * 16;
+
+    VkPipelineLayoutCreateInfo plci{};
+    plci.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    plci.setLayoutCount = 1;
+    plci.pSetLayouts = &mUiDescLayout;
+    plci.pushConstantRangeCount = 1;
+    plci.pPushConstantRanges = &pcr;
+
+    if (vkCreatePipelineLayout(mDevice, &plci, nullptr, &mUiPipelineLayout) != VK_SUCCESS) {
+        LOGE("Failed to create UI pipeline layout");
+        return false;
+    }
+
+    // 3. UI Font Sampler
+    VkSamplerCreateInfo sci{};
+    sci.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    sci.magFilter = VK_FILTER_LINEAR;
+    sci.minFilter = VK_FILTER_LINEAR;
+    sci.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    sci.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    sci.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    sci.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    if (vkCreateSampler(mDevice, &sci, nullptr, &mUiFontSampler) != VK_SUCCESS) {
+        LOGE("Failed to create UI font sampler");
+        return false;
+    }
+
+    // 4. Decode Font Atlas and upload to VkImage
+    int atlasW = 0, atlasH = 0;
+    std::vector<uint8_t> coverage;
+    mobile_ui::UIOverlay::getFontAtlas(atlasW, atlasH, coverage);
+
+    if (atlasW > 0 && atlasH > 0 && !coverage.empty()) {
+        mUiFontTexture.width = atlasW;
+        mUiFontTexture.height = atlasH;
+        mUiFontTexture.levels = 1;
+
+        VkImageCreateInfo ici{};
+        ici.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        ici.imageType = VK_IMAGE_TYPE_2D;
+        ici.extent = {(uint32_t)atlasW, (uint32_t)atlasH, 1};
+        ici.mipLevels = 1;
+        ici.arrayLayers = 1;
+        ici.format = VK_FORMAT_R8_UNORM;
+        ici.tiling = VK_IMAGE_TILING_OPTIMAL;
+        ici.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        ici.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+        ici.samples = VK_SAMPLE_COUNT_1_BIT;
+        ici.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+        if (vkCreateImage(mDevice, &ici, nullptr, &mUiFontTexture.image) == VK_SUCCESS) {
+            VkMemoryRequirements memReqs;
+            vkGetImageMemoryRequirements(mDevice, mUiFontTexture.image, &memReqs);
+
+            VkMemoryAllocateInfo mai{};
+            mai.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+            mai.allocationSize = memReqs.size;
+            mai.memoryTypeIndex = findMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+            if (vkAllocateMemory(mDevice, &mai, nullptr, &mUiFontTexture.memory) == VK_SUCCESS) {
+                vkBindImageMemory(mDevice, mUiFontTexture.image, mUiFontTexture.memory, 0);
+
+                VkImageViewCreateInfo ivci{};
+                ivci.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+                ivci.image = mUiFontTexture.image;
+                ivci.viewType = VK_IMAGE_VIEW_TYPE_2D;
+                ivci.format = VK_FORMAT_R8_UNORM;
+                ivci.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+                ivci.subresourceRange.levelCount = 1;
+                ivci.subresourceRange.layerCount = 1;
+                vkCreateImageView(mDevice, &ivci, nullptr, &mUiFontTexture.view);
+
+                // Upload via staging buffer
+                VkBuffer stagingBuf = VK_NULL_HANDLE;
+                VkDeviceMemory stagingMem = VK_NULL_HANDLE;
+                size_t uploadBytes = coverage.size();
+                if (createBuffer(uploadBytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                 stagingBuf, stagingMem)) {
+                    void* mapped = nullptr;
+                    if (vkMapMemory(mDevice, stagingMem, 0, uploadBytes, 0, &mapped) == VK_SUCCESS) {
+                        memcpy(mapped, coverage.data(), uploadBytes);
+                        vkUnmapMemory(mDevice, stagingMem);
+                    }
+
+                    vkResetCommandBuffer(mCommandBuffer, 0);
+                    VkCommandBufferBeginInfo bi{};
+                    bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+                    bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+                    vkBeginCommandBuffer(mCommandBuffer, &bi);
+
+                    VkImageMemoryBarrier barrierToDst{};
+                    barrierToDst.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+                    barrierToDst.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+                    barrierToDst.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+                    barrierToDst.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                    barrierToDst.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                    barrierToDst.image = mUiFontTexture.image;
+                    barrierToDst.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+                    barrierToDst.subresourceRange.levelCount = 1;
+                    barrierToDst.subresourceRange.layerCount = 1;
+                    barrierToDst.srcAccessMask = 0;
+                    barrierToDst.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+
+                    vkCmdPipelineBarrier(mCommandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                                         VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrierToDst);
+
+                    VkBufferImageCopy region{};
+                    region.bufferOffset = 0;
+                    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+                    region.imageSubresource.mipLevel = 0;
+                    region.imageSubresource.layerCount = 1;
+                    region.imageExtent = {(uint32_t)atlasW, (uint32_t)atlasH, 1};
+
+                    vkCmdCopyBufferToImage(mCommandBuffer, stagingBuf, mUiFontTexture.image,
+                                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+                    VkImageMemoryBarrier barrierToRead = barrierToDst;
+                    barrierToRead.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+                    barrierToRead.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                    barrierToRead.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+                    barrierToRead.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+                    vkCmdPipelineBarrier(mCommandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrierToRead);
+
+                    vkEndCommandBuffer(mCommandBuffer);
+
+                    VkSubmitInfo si{};
+                    si.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+                    si.commandBufferCount = 1;
+                    si.pCommandBuffers = &mCommandBuffer;
+                    vkQueueSubmit(mQueue, 1, &si, VK_NULL_HANDLE);
+                    vkQueueWaitIdle(mQueue);
+
+                    vkDestroyBuffer(mDevice, stagingBuf, nullptr);
+                    vkFreeMemory(mDevice, stagingMem, nullptr);
+                }
+            }
+        }
+    }
+
+    // Allocate and update UI descriptor set
+    VkDescriptorSetAllocateInfo ai{};
+    ai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    ai.descriptorPool = mDescriptorPool;
+    ai.descriptorSetCount = 1;
+    ai.pSetLayouts = &mUiDescLayout;
+    if (vkAllocateDescriptorSets(mDevice, &ai, &mUiDescSet) == VK_SUCCESS) {
+        VkDescriptorImageInfo di{};
+        di.sampler = mUiFontSampler;
+        di.imageView = (mUiFontTexture.view != VK_NULL_HANDLE) ? mUiFontTexture.view : mDummyTexture.view;
+        di.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+        VkWriteDescriptorSet write{};
+        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.dstSet = mUiDescSet;
+        write.dstBinding = 0;
+        write.descriptorCount = 1;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        write.pImageInfo = &di;
+
+        vkUpdateDescriptorSets(mDevice, 1, &write, 0, nullptr);
+    }
+
+    // 5. Compile UI Shaders (GLSL 450 -> SPIR-V 1.0)
+    const char* vsSrc = R"(#version 450 core
+layout(location = 0) in vec2 aPos;
+layout(location = 1) in vec2 aUv;
+layout(location = 2) in vec4 aColor;
+layout(location = 3) in vec4 aParams;
+
+layout(push_constant) uniform PushConsts {
+    mat4 uProj;
+};
+
+layout(location = 0) out vec2 vUv;
+layout(location = 1) out vec4 vColor;
+layout(location = 2) out vec4 vParams;
+
+void main() {
+    gl_Position = uProj * vec4(aPos, 0.0, 1.0);
+    vUv = aUv;
+    vColor = aColor;
+    vParams = aParams;
+}
+)";
+
+    const char* fsSrc = R"(#version 450 core
+layout(location = 0) in vec2 vUv;
+layout(location = 1) in vec4 vColor;
+layout(location = 2) in vec4 vParams;
+
+layout(set = 0, binding = 0) uniform sampler2D uFontTex;
+
+layout(location = 0) out vec4 FragColor;
+
+void main() {
+    float mode = vParams.x;
+    float param = vParams.y;
+    float alpha = 1.0;
+
+    if (mode > 0.5 && mode < 1.5) {
+        // Mode 1: Circle or Ring (vUv in -1..1)
+        float d = length(vUv);
+        float fw = fwidth(d);
+        if (fw < 0.001) fw = 0.005;
+        float outer = smoothstep(1.0, 1.0 - fw, d);
+        if (param > 0.0) {
+            float inner = smoothstep(param - fw, param, d);
+            alpha = outer * inner;
+        } else {
+            alpha = outer;
+        }
+    } else if (mode > 1.5 && mode < 2.5) {
+        // Mode 2: Font glyph texture: sample red channel
+        alpha = texture(uFontTex, vUv).r;
+    } else if (mode > 2.5 && mode < 3.5) {
+        // Mode 3: Iconic Material 3 Settings Cogwheel
+        float d = length(vUv);
+        float fw = fwidth(d);
+        if (fw < 0.001) fw = 0.005;
+        float angle = atan(vUv.y, vUv.x) + param;
+        float teeth = cos(8.0 * angle);
+        float rMax = 0.74 + 0.22 * smoothstep(-0.25, 0.25, teeth);
+        float outer = smoothstep(rMax, rMax - fw * 1.5, d);
+        float inner = smoothstep(0.33 - fw * 1.5, 0.33, d);
+        alpha = outer * inner;
+    } else if (mode > 3.5 && mode < 4.5) {
+        // Mode 4: Material 3 Close 'X' icon
+        vec2 p = abs(vUv);
+        float lineDist = abs(p.x - p.y) * 0.7071;
+        float capDist = max(p.x, p.y);
+        float fw = fwidth(lineDist);
+        if (fw < 0.001) fw = 0.005;
+        float line = smoothstep(0.16, 0.16 - fw, lineDist);
+        float box = smoothstep(0.65, 0.65 - fw, capDist);
+        alpha = line * box;
+    } else if (mode > 4.5 && mode < 5.5) {
+        // Mode 5: Spin Cyclone / Galaxy Swirl Glyph
+        float d = length(vUv);
+        float a = atan(vUv.y, vUv.x) + param;
+        float aFold = mod(a, 3.14159265);
+        float normAngle = clamp((aFold - 0.25) / 2.35, 0.0, 1.0);
+        float arcR = mix(0.42, 0.78, normAngle);
+        float dArc = abs(d - arcR);
+        float thick = mix(0.06, 0.16, normAngle);
+        float fw = fwidth(dArc);
+        if (fw < 0.001) fw = 0.005;
+        float arcAlpha = smoothstep(thick, thick - fw * 1.5, dArc);
+        float angleMask = smoothstep(0.12, 0.30, aFold) * smoothstep(2.80, 2.60, aFold);
+        alpha = arcAlpha * angleMask;
+    } else if (mode > 5.5 && mode < 6.5) {
+        // Mode 6: Modern Precision Chevron Arrow
+        float ca = cos(param);
+        float sa = sin(param);
+        vec2 p = vec2(ca * vUv.x - sa * vUv.y, sa * vUv.x + ca * vUv.y);
+        vec2 tip = vec2(0.30, 0.0);
+        vec2 wing = vec2(-0.30, 0.52);
+        vec2 seg = wing - tip;
+        vec2 pt = vec2(p.x, abs(p.y)) - tip;
+        float t = clamp(dot(pt, seg) / dot(seg, seg), 0.0, 1.0);
+        float dLine = length(pt - seg * t);
+        float fw = fwidth(dLine);
+        if (fw < 0.001) fw = 0.005;
+        float strokeW = 0.16;
+        alpha = smoothstep(strokeW, strokeW - fw * 1.5, dLine);
+    } else if (mode > 6.5 && mode < 7.5) {
+        // Mode 7: Modern Minimalist Camera Glyph
+        vec2 p = vUv;
+        vec2 bBody = vec2(0.48, 0.32);
+        vec2 pBody = p - vec2(0.0, 0.06);
+        vec2 dBody = abs(pBody) - bBody;
+        float distBody = length(max(dBody, 0.0)) + min(max(dBody.x, dBody.y), 0.0) - 0.10;
+
+        vec2 bTop = vec2(0.18, 0.08);
+        vec2 pTop = p - vec2(-0.16, -0.32);
+        vec2 dTop = abs(pTop) - bTop;
+        float distTop = length(max(dTop, 0.0)) + min(max(dTop.x, dTop.y), 0.0) - 0.05;
+
+        float bodyUnion = min(distBody, distTop);
+        float fw = fwidth(length(p));
+        if (fw < 0.001) fw = 0.005;
+        float fillBody = smoothstep(0.0, -fw * 1.5, bodyUnion);
+
+        float dLens = length(p - vec2(0.0, 0.08));
+        float lensInner = smoothstep(0.16 - fw, 0.16, dLens);
+        float lensOuter = smoothstep(0.24, 0.24 - fw, dLens);
+        float lensRing = lensInner * lensOuter;
+        alpha = fillBody + lensRing;
+    } else {
+        // Mode 0: Rounded rectangle with exact aspect ratio
+        if (param > 0.0) {
+            vec2 p = abs(vUv);
+            float aspect = vParams.z;
+            vec2 b = (vParams.w > 0.5) ? vec2(1.0 - param, aspect - param) : vec2(aspect - param, 1.0 - param);
+            vec2 d = p - b;
+            float dist = length(max(d, 0.0)) - param;
+            float fw = fwidth(dist);
+            if (fw < 0.001) fw = 0.005;
+            alpha = smoothstep(0.0, -fw, dist);
+        }
+    }
+
+    if (alpha <= 0.002) discard;
+    FragColor = vec4(vColor.rgb, vColor.a * alpha);
+}
+)";
+
+    std::vector<uint32_t> vsSpirv, fsSpirv;
+    std::string err;
+    if (!compileShaderToSPIRV(vsSrc, true, vsSpirv, err) ||
+        !compileShaderToSPIRV(fsSrc, false, fsSpirv, err)) {
+        LOGE("Failed to compile UI shaders: %s", err.c_str());
+        return false;
+    }
+
+    VkShaderModule vsMod = createShaderModule(vsSpirv.data(), vsSpirv.size() * 4);
+    VkShaderModule fsMod = createShaderModule(fsSpirv.data(), fsSpirv.size() * 4);
+
+    VkPipelineShaderStageCreateInfo stages[2]{};
+    stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+    stages[0].module = vsMod;
+    stages[0].pName = "main";
+    stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    stages[1].module = fsMod;
+    stages[1].pName = "main";
+
+    // Vertex input format matching mobile_ui::UIVertex
+    VkVertexInputBindingDescription bindDesc{};
+    bindDesc.binding = 0;
+    bindDesc.stride = sizeof(mobile_ui::UIVertex);
+    bindDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    VkVertexInputAttributeDescription attrs[4]{};
+    attrs[0] = {0, 0, VK_FORMAT_R32G32_SFLOAT, (uint32_t)offsetof(mobile_ui::UIVertex, x)};
+    attrs[1] = {1, 0, VK_FORMAT_R32G32_SFLOAT, (uint32_t)offsetof(mobile_ui::UIVertex, u)};
+    attrs[2] = {2, 0, VK_FORMAT_R32G32B32A32_SFLOAT, (uint32_t)offsetof(mobile_ui::UIVertex, r)};
+    attrs[3] = {3, 0, VK_FORMAT_R32G32B32A32_SFLOAT, (uint32_t)offsetof(mobile_ui::UIVertex, mode)};
+
+    VkPipelineVertexInputStateCreateInfo vici{};
+    vici.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vici.vertexBindingDescriptionCount = 1;
+    vici.pVertexBindingDescriptions = &bindDesc;
+    vici.vertexAttributeDescriptionCount = 4;
+    vici.pVertexAttributeDescriptions = attrs;
+
+    VkPipelineInputAssemblyStateCreateInfo iaci{};
+    iaci.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    iaci.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
+    VkPipelineViewportStateCreateInfo vpsi{};
+    vpsi.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    vpsi.viewportCount = 1;
+    vpsi.scissorCount = 1;
+
+    VkPipelineRasterizationStateCreateInfo rsci{};
+    rsci.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rsci.polygonMode = VK_POLYGON_MODE_FILL;
+    rsci.cullMode = VK_CULL_MODE_NONE;
+    rsci.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    rsci.lineWidth = 1.0f;
+
+    VkPipelineMultisampleStateCreateInfo msci{};
+    msci.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    msci.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    // Blending: SRC_ALPHA, ONE_MINUS_SRC_ALPHA
+    VkPipelineColorBlendAttachmentState cbAttachment{};
+    cbAttachment.blendEnable = VK_TRUE;
+    cbAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    cbAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    cbAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+    cbAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    cbAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    cbAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+    cbAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                                  VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+
+    VkPipelineColorBlendStateCreateInfo cbci{};
+    cbci.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    cbci.attachmentCount = 1;
+    cbci.pAttachments = &cbAttachment;
+
+    VkDynamicState dynStates[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+    VkPipelineDynamicStateCreateInfo dsci{};
+    dsci.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dsci.dynamicStateCount = 2;
+    dsci.pDynamicStates = dynStates;
+
+    VkGraphicsPipelineCreateInfo pci{};
+    pci.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    pci.stageCount = 2;
+    pci.pStages = stages;
+    pci.pVertexInputState = &vici;
+    pci.pInputAssemblyState = &iaci;
+    pci.pViewportState = &vpsi;
+    pci.pRasterizationState = &rsci;
+    pci.pMultisampleState = &msci;
+    pci.pColorBlendState = &cbci;
+    pci.pDynamicState = &dsci;
+    pci.layout = mUiPipelineLayout;
+    pci.renderPass = mPresentRenderPass;
+
+    VkResult res = vkCreateGraphicsPipelines(mDevice, VK_NULL_HANDLE, 1, &pci, nullptr, &mUiPipeline);
+
+    vkDestroyShaderModule(mDevice, vsMod, nullptr);
+    vkDestroyShaderModule(mDevice, fsMod, nullptr);
+
+    return res == VK_SUCCESS;
+}
+
+void VkRenderer::destroyUiPipeline() {
+    if (mUiPipeline != VK_NULL_HANDLE) { vkDestroyPipeline(mDevice, mUiPipeline, nullptr); mUiPipeline = VK_NULL_HANDLE; }
+    if (mUiPipelineLayout != VK_NULL_HANDLE) { vkDestroyPipelineLayout(mDevice, mUiPipelineLayout, nullptr); mUiPipelineLayout = VK_NULL_HANDLE; }
+    if (mUiDescLayout != VK_NULL_HANDLE) { vkDestroyDescriptorSetLayout(mDevice, mUiDescLayout, nullptr); mUiDescLayout = VK_NULL_HANDLE; }
+    if (mUiFontSampler != VK_NULL_HANDLE) { vkDestroySampler(mDevice, mUiFontSampler, nullptr); mUiFontSampler = VK_NULL_HANDLE; }
+    if (mUiFontTexture.view != VK_NULL_HANDLE) { vkDestroyImageView(mDevice, mUiFontTexture.view, nullptr); mUiFontTexture.view = VK_NULL_HANDLE; }
+    if (mUiFontTexture.image != VK_NULL_HANDLE) { vkDestroyImage(mDevice, mUiFontTexture.image, nullptr); mUiFontTexture.image = VK_NULL_HANDLE; }
+    if (mUiFontTexture.memory != VK_NULL_HANDLE) { vkFreeMemory(mDevice, mUiFontTexture.memory, nullptr); mUiFontTexture.memory = VK_NULL_HANDLE; }
+    mUiDescSet = VK_NULL_HANDLE;
+}
+
+void VkRenderer::renderUiOverlay(int width, int height) {
+    if (mUiPipeline == VK_NULL_HANDLE || mUiDescSet == VK_NULL_HANDLE) return;
+
+    std::vector<mobile_ui::UIVertex> verts;
+    mobile_ui::UIOverlay::get().generateVertices(width, height, verts);
+    if (verts.empty()) return;
+
+    FrameResource& fr = mFrameRes[mFrameIndex];
+    uploadDynamicBuffer(fr.uiVbo, fr.uiVboMem, fr.uiVboCap,
+                        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                        verts.data(), verts.size() * sizeof(mobile_ui::UIVertex));
+
+    VkViewport vp{};
+    vp.x = 0.0f;
+    vp.y = 0.0f;
+    vp.width = (float)width;
+    vp.height = (float)height;
+    vp.minDepth = 0.0f;
+    vp.maxDepth = 1.0f;
+    vkCmdSetViewport(mCommandBuffer, 0, 1, &vp);
+
+    VkRect2D scissor{};
+    scissor.offset = {0, 0};
+    scissor.extent = {(uint32_t)width, (uint32_t)height};
+    vkCmdSetScissor(mCommandBuffer, 0, 1, &scissor);
+
+    vkCmdBindPipeline(mCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mUiPipeline);
+    vkCmdBindDescriptorSets(mCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mUiPipelineLayout, 0, 1, &mUiDescSet, 0, nullptr);
+
+    float proj[16] = {
+        2.0f / (float)width,  0.0f,                 0.0f, 0.0f,
+        0.0f,                 2.0f / (float)height, 0.0f, 0.0f,
+        0.0f,                 0.0f,                 1.0f, 0.0f,
+        -1.0f,                -1.0f,                0.0f, 1.0f
+    };
+    vkCmdPushConstants(mCommandBuffer, mUiPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(proj), proj);
+
+    VkDeviceSize offset = 0;
+    vkCmdBindVertexBuffers(mCommandBuffer, 0, 1, &fr.uiVbo, &offset);
+
+    vkCmdDraw(mCommandBuffer, (uint32_t)verts.size(), 1, 0, 0);
 }
 
 VkFormat VkRenderer::findSupportedDepthFormat() {
@@ -1865,6 +2360,9 @@ void VkRenderer::present(const VkTarget& target, int vpX, int vpY, int vpW, int 
         // Draw procedural fullscreen quad (3 vertices)
         vkCmdDraw(mCommandBuffer, 3, 1, 0, 0);
     }
+
+    // Render on-screen controls HUD & Settings overlay directly in the swapchain render pass
+    renderUiOverlay(mWidth, mHeight);
 
     vkCmdEndRenderPass(mCommandBuffer);
 

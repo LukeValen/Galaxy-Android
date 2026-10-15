@@ -16,6 +16,7 @@
 #include "gl_renderer.h"
 #include "gx_builder.h"
 #include "vk_shadergen.h"
+#include "mobile/mobile_ui.h"
 
 namespace gpu {
 
@@ -106,6 +107,11 @@ struct FrameResource {
     size_t eyeCap = 0;
 
     VkDescriptorSet set0 = VK_NULL_HANDLE;
+
+    // UI dynamic vertex buffer
+    VkBuffer uiVbo = VK_NULL_HANDLE;
+    VkDeviceMemory uiVboMem = VK_NULL_HANDLE;
+    size_t uiVboCap = 0;
 };
 
 struct VkTexture {
@@ -154,6 +160,9 @@ private:
     bool createSyncObjects();
     bool createDescriptorLayouts();
     bool createPresentationPipeline();
+    bool createUiPipeline();
+    void destroyUiPipeline();
+    void renderUiOverlay(int width, int height);
 
     uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
     VkFormat findSupportedDepthFormat();
@@ -214,6 +223,14 @@ private:
     VkPipeline mPresentPipeline = VK_NULL_HANDLE;
     VkSampler mPresentSampler = VK_NULL_HANDLE;
     std::unordered_map<VkImageView, VkDescriptorSet> mPresentDescSets;
+
+    // UI overlay pipeline
+    VkDescriptorSetLayout mUiDescLayout = VK_NULL_HANDLE;
+    VkPipelineLayout mUiPipelineLayout = VK_NULL_HANDLE;
+    VkPipeline mUiPipeline = VK_NULL_HANDLE;
+    VkSampler mUiFontSampler = VK_NULL_HANDLE;
+    VkTexture mUiFontTexture;
+    VkDescriptorSet mUiDescSet = VK_NULL_HANDLE;
 
     // Rotating frame resources
     FrameResource mFrameRes[2];

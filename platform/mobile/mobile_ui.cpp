@@ -62,16 +62,7 @@ inline int64_t currentTimeMs() {
     return (int64_t)ts.tv_sec * 1000 + (ts.tv_nsec / 1000000);
 }
 
-// In-shader vertex for 2D batching
-struct UIVertex {
-    float x, y;
-    float u, v;
-    float r, g, b, a;
-    float mode;   // 0 = rect, 1 = circle/ring, 2 = font glyph, 3 = cogwheel, 4 = close 'X'
-    float param;  // ring: inner ratio; rect: corner radius ratio; cogwheel: rot angle
-    float aspect; // rect aspect ratio (w/h or h/w)
-    float extra;  // rect: 0 = horiz/square, 1 = vert
-};
+
 
 struct Color {
     float r, g, b, a;
@@ -299,9 +290,6 @@ void Settings::load(const std::string& path) {
             else if (!strcmp(key, "gyro_aiming")) gyroAiming = (val > 0.5f);
             else if (!strcmp(key, "graphics_backend")) {
                 graphicsBackend = (int)val;
-                if (graphicsBackend == 1 && showControls) {
-                    graphicsBackend = 0;
-                }
             }
         }
     }
@@ -531,9 +519,31 @@ bool UIOverlay::init() {
     glBindVertexArray(0);
 
     // Decode font atlas into GL_R8 texture
+    std::vector<uint8_t> coverage;
+    getFontAtlas(mAtlasW, mAtlasH, coverage);
+
+    glGenTextures(1, &mFontTex);
+    glBindTexture(GL_TEXTURE_2D, mFontTex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, mAtlasW, mAtlasH, 0, GL_RED, GL_UNSIGNED_BYTE, coverage.data());
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    const char* rend = (const char*)glGetString(GL_RENDERER);
+    if (rend && rend[0]) {
+        mGpuRendererName = rend;
+    }
+
+    mInitialized = true;
+    LOGI("Mobile UI initialized successfully (Atlas %dx%d, GPU: %s)", mAtlasW, mAtlasH, mGpuRendererName.c_str());
+    return true;
+}
+
+void UIOverlay::getFontAtlas(int& width, int& height, std::vector<uint8_t>& coverage) {
     const ui_font::Face& face = ui_font::kFaces[0]; // size 40 Inter Bold
-    mAtlasW = face.width;
-    mAtlasH = face.height;
+    width = face.width;
+    height = face.height;
 
     std::vector<uint8_t> packed;
     uint32_t bits = 0;
@@ -549,28 +559,11 @@ bool UIOverlay::init() {
         }
     }
 
-    std::vector<uint8_t> coverage((size_t)face.width * face.height, 0);
+    coverage.assign((size_t)face.width * face.height, 0);
     for (size_t i = 0; i < coverage.size(); i++) {
         uint8_t b = (i / 2 < packed.size()) ? packed[i / 2] : 0;
         coverage[i] = (uint8_t)(((i & 1) ? (b & 15) : (b >> 4)) * 17);
     }
-
-    glGenTextures(1, &mFontTex);
-    glBindTexture(GL_TEXTURE_2D, mFontTex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, face.width, face.height, 0, GL_RED, GL_UNSIGNED_BYTE, coverage.data());
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-    const char* rend = (const char*)glGetString(GL_RENDERER);
-    if (rend && rend[0]) {
-        mGpuRendererName = rend;
-    }
-
-    mInitialized = true;
-    LOGI("Mobile UI initialized successfully (Atlas %dx%d, GPU: %s)", mAtlasW, mAtlasH, mGpuRendererName.c_str());
-    return true;
 }
 
 uint32_t UIOverlay::getTouchButtons() const {
@@ -1560,10 +1553,8 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
     return true;
 }
 
-void UIOverlay::render(int screenW, int screenH) {
-    if (!init()) return;
-
-    std::vector<UIVertex> verts;
+void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>& verts) {
+    verts.clear();
     verts.reserve(1024);
 
     float baseDpi = (float)screenH / 650.0f;
@@ -2499,7 +2490,17 @@ void UIOverlay::render(int screenW, int screenH) {
         drawText(mToastMessage.empty() ? "Game Progress Saved Anywhere!" : mToastMessage.c_str(), toastX + 42.0f * uiScale, toastY + toastH * 0.5f + 5.0f * uiScale, 0.35f * uiScale, rgba(0.95f, 1.0f, 0.97f, toastAlpha), 0);
     }
 
+}
+
+void UIOverlay::render(int screenW, int screenH) {
+    if (!init()) return;
+
+    std::vector<UIVertex> verts;
+    generateVertices(screenW, screenH, verts);
     if (verts.empty()) return;
+
+    float w = (float)screenW;
+    float h = (float)screenH;
 
     // -------------------------------------------------------------
     // Single GLES Draw Call

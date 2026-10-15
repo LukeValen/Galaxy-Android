@@ -5,7 +5,20 @@
 #include <string>
 #include "port/input.h"
 
+#include <vector>
+
 namespace mobile_ui {
+
+// In-shader vertex for 2D batching (used by both GLES 3.2 and Vulkan 1.0)
+struct UIVertex {
+    float x, y;
+    float u, v;
+    float r, g, b, a;
+    float mode;   // 0 = rect, 1 = circle/ring, 2 = font glyph, 3 = cogwheel, 4 = close 'X', etc.
+    float param;  // ring: inner ratio; rect: corner radius ratio; cogwheel: rot angle
+    float aspect; // rect aspect ratio (w/h or h/w)
+    float extra;  // rect: 0 = horiz/square, 1 = vert
+};
 
 struct Settings {
     bool showControls = true;
@@ -49,7 +62,7 @@ struct Settings {
 
     bool fullTouchMode = true;
     int perfHudMode = 2; // 0 = Off, 1 = FPS, 2 = Full Hardware Stats
-    int graphicsBackend = 0; // 0 = OpenGL ES 3.2 (Default with full On-Screen Touch Controls HUD), 1 = Vulkan 1.0
+    int graphicsBackend = 1; // 1 = Vulkan 1.0 (Full Native Default), 0 = OpenGL ES 3.2
 
     void load(const std::string& path);
     void save(const std::string& path) const;
@@ -78,7 +91,13 @@ public:
     bool handleInput(const AInputEvent* event, PortPadState& pad, int& spinFrames,
                      int screenW, int screenH, int vpX, int vpY, int vpW, int vpH);
 
-    // Render the overlay (touch controls + settings menu + hardware perf HUD)
+    // Generate 2D quad geometry for Vulkan and OpenGL renderers
+    void generateVertices(int screenW, int screenH, std::vector<UIVertex>& outVerts);
+
+    // Retrieves font atlas dimensions and 8-bit coverage data
+    static void getFontAtlas(int& width, int& height, std::vector<uint8_t>& coverage);
+
+    // Render the overlay in OpenGL ES 3.2
     void render(int screenW, int screenH);
 
     bool needsRedraw();
