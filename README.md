@@ -6,9 +6,9 @@
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
 [![Platform: Android ARM64](https://img.shields.io/badge/Platform-Android%20ARM64-brightgreen.svg)](docs/TECHNICAL.md)
-[![Graphics: GLES 3.2 (Default) | Vulkan 1.1 (Experimental)](https://img.shields.io/badge/Graphics-GLES%203.2%20%7C%20Vulkan%201.1%20(WIP)-orange.svg)](docs/TECHNICAL.md)
+[![Graphics: Vulkan 1.0 (Default) | GLES 3.2](https://img.shields.io/badge/Graphics-Vulkan%201.0%20(Default)%20%7C%20GLES%203.2-orange.svg)](docs/TECHNICAL.md)
 [![Audio: AAudio](https://img.shields.io/badge/Audio-AAudio%20Low--Latency-purple.svg)](docs/TECHNICAL.md)
-[![Release: v0.0.1b](https://img.shields.io/badge/Release-v0.0.1b-blue.svg)](https://github.com/OpenPort-Labs/Galaxy-Android/releases/tag/v0.0.1b)
+[![Release: v0.0.1cx](https://img.shields.io/badge/Release-v0.0.1cx-blue.svg)](https://github.com/OpenPort-Labs/Galaxy-Android/releases/tag/v0.0.1cx)
 
 **Play the classic 3D cosmic gravity platformer natively on your Android phone, tablet, or handheld console.**
 

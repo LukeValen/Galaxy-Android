@@ -1,3 +1,28 @@
+# GalaxyAndroid v0.0.1cx — Native Vulkan 1.0 UI, Startup Crash Fix, and Telemetry Release
+
+Hotfix and feature release bringing full native Vulkan 1.0 UI overlays, startup presentation crash resolution, corrected gyro coordinate transforms, and real-time renderer performance telemetry.
+
+---
+
+### Highlights & Fixes in v0.0.1cx
+
+#### 1. Startup Presentation Crash Resolution
+- **Uninitialized Vulkan Target Guard**: Resolved immediate crash on boot caused by the idle loop attempting to present `a.vkTarget` before `vkr.hasFrame()` was true. `colorImage` in layout `VK_IMAGE_LAYOUT_UNDEFINED` is now strictly guarded, eliminating GPU page faults and driver crashes at launch.
+- **`vkr.present()` Target Quad Check**: Guarded target fullscreen quad sampling with `hasFrame()`, ensuring presentation render pass clears and overlays without sampling unrendered offscreen textures.
+
+#### 2. Native Vulkan 1.0 UI & Touch Controls Overlay
+- **No Stubs / Full Vulkan Implementation**: Built complete Vulkan graphics pipeline (`mUiPipeline`) for on-screen controls, glyph fonts, and drawer widgets directly in the swapchain render pass.
+- **Vulkan NDC Projection Correction**: Configured top-left origin projection (`proj[5] = 2.0f / height`, `proj[13] = -1.0f`) to match Vulkan coordinate space, eliminating upside-down HUD text.
+
+#### 3. Renderer Performance Telemetry
+- **Corrected 0.0 FPS Reporting**: Routed monoscopic render duration metrics through `port_perf_render(renderDurationNs, 0)` in both Vulkan and OpenGL ES loops. Renderer FPS and CPU submission timings now accurately reflect active rendering in logs and HUD stats.
+
+#### 4. Gyroscope Orientation & Inversion Controls
+- **Landscape Coordinate Axis Correction**: Fixed horizontal movements moving the star cursor vertically. Corrected sensor orientation transform for Android landscape mode.
+- **Invert X / Invert Y Settings**: Added persistent toggles and interactive buttons in Row 19b of the settings drawer for customizable star pointer tracking.
+
+---
+
 # GalaxyAndroid v0.0.1 — Initial Native Android Release
 
 The first native ARM64 Android port of **Super Mario Galaxy**, executing compiled C++ game logic directly on Android hardware with zero emulation overhead.
