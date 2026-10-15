@@ -71,6 +71,8 @@ struct MobileApp {
     int spinFrames = 0;
     bool gamepadDetected = false;
     uint32_t physicalButtons = 0;
+    float physicalStickX = 0.0f;
+    float physicalStickY = 0.0f;
 };
 
 MobileApp gMobile;
@@ -405,8 +407,15 @@ int32_t onInput(android_app* app, AInputEvent* event) {
             if (fabsf(stickY) <= kDeadzone) stickY = 0.0f;
 
             a->pad.connected = 1;
-            a->pad.stickX = stickX;
-            a->pad.stickY = -stickY; // Invert Y for Wii/GameCube convention
+            a->physicalStickX = stickX;
+            a->physicalStickY = -stickY; // Invert Y for Wii/GameCube convention
+            if (mobile_ui::get().isStickActive()) {
+                a->pad.stickX = mobile_ui::get().getTouchStickX();
+                a->pad.stickY = mobile_ui::get().getTouchStickY();
+            } else {
+                a->pad.stickX = a->physicalStickX;
+                a->pad.stickY = a->physicalStickY;
+            }
 
             // D-Pad Hat axes (Standard on Xbox, PlayStation, 8BitDo, and HID pads)
             float hatX = AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_HAT_X, 0);
@@ -457,6 +466,13 @@ int32_t onInput(android_app* app, AInputEvent* event) {
         if (mobile_ui::get().handleInput(event, a->pad, a->spinFrames,
                                          a->screenWidth, a->screenHeight,
                                          ptrX, ptrY, ptrW, ptrH)) {
+            if (mobile_ui::get().isStickActive()) {
+                a->pad.stickX = mobile_ui::get().getTouchStickX();
+                a->pad.stickY = mobile_ui::get().getTouchStickY();
+            } else {
+                a->pad.stickX = a->physicalStickX;
+                a->pad.stickY = a->physicalStickY;
+            }
             a->pad.buttons = a->physicalButtons | mobile_ui::get().getTouchButtons();
             port_input_set(0, &a->pad);
             return 1;
@@ -563,6 +579,13 @@ int32_t onInput(android_app* app, AInputEvent* event) {
             return 0;
         }
 
+        if (mobile_ui::get().isStickActive()) {
+            a->pad.stickX = mobile_ui::get().getTouchStickX();
+            a->pad.stickY = mobile_ui::get().getTouchStickY();
+        } else {
+            a->pad.stickX = a->physicalStickX;
+            a->pad.stickY = a->physicalStickY;
+        }
         a->pad.buttons = a->physicalButtons | mobile_ui::get().getTouchButtons();
         port_input_set(0, &a->pad);
         return 1;
@@ -790,6 +813,14 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
             a.pad.accX = 0.0f;
             a.pad.accY = 0.0f;
         }
+        if (mobile_ui::get().isStickActive()) {
+            a.pad.stickX = mobile_ui::get().getTouchStickX();
+            a.pad.stickY = mobile_ui::get().getTouchStickY();
+        } else {
+            a.pad.stickX = a.physicalStickX;
+            a.pad.stickY = a.physicalStickY;
+        }
+        a.pad.buttons = a.physicalButtons | mobile_ui::get().getTouchButtons();
         port_input_set(0, &a.pad);
 
 

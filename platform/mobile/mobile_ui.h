@@ -66,6 +66,11 @@ public:
     // Current active buttons pressed on touchscreen
     uint32_t getTouchButtons() const;
 
+    // Current virtual stick state
+    bool isStickActive() const { return mStickPointerId >= 0; }
+    float getTouchStickX() const { return mTouchStickX; }
+    float getTouchStickY() const { return mTouchStickY; }
+
     // Processes an Android motion or key event.
     // Returns true if consumed (e.g., settings menu or virtual controls).
     bool handleInput(const AInputEvent* event, PortPadState& pad, int& spinFrames,
@@ -119,6 +124,8 @@ private:
     float mStickBaseY = 0.0f;
     float mStickKnobX = 0.0f;
     float mStickKnobY = 0.0f;
+    float mTouchStickX = 0.0f;
+    float mTouchStickY = 0.0f;
 
     // Button press states (for visual press effect)
     bool mBtnAPressed = false;

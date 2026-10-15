@@ -896,8 +896,13 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                         // Row 13: Graphics Backend
                         else if (contentRelY >= 718.0f * uiScale && contentRelY < 776.0f * uiScale) {
                             float midX = drawerX + padX + contentW * 0.5f;
-                            if (px < midX) mSettings.graphicsBackend = 0; // OpenGL ES 3.2
-                            else mSettings.graphicsBackend = 1; // Vulkan 1.1
+                            if (px < midX) {
+                                mSettings.graphicsBackend = 0; // OpenGL ES 3.2
+                                showToast("Backend: OpenGL ES 3.2 (Active & Stable)");
+                            } else {
+                                mSettings.graphicsBackend = 1; // Vulkan 1.1
+                                showToast("Backend: Vulkan 1.1 (Experimental WIP)");
+                            }
                         }
                         // Row 14: Game Speed Multiplier (Turbo / Fast-Forward)
                         else if (contentRelY >= 776.0f * uiScale && contentRelY < 834.0f * uiScale) {
@@ -1095,10 +1100,10 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
         mStickPointerId = -1;
         mStickKnobX = mStickBaseX;
         mStickKnobY = mStickBaseY;
-        if (fabsf(pad.stickX) < 0.05f && fabsf(pad.stickY) < 0.05f) {
-            pad.stickX = 0.0f;
-            pad.stickY = 0.0f;
-        }
+        mTouchStickX = 0.0f;
+        mTouchStickY = 0.0f;
+        pad.stickX = 0.0f;
+        pad.stickY = 0.0f;
         touchButtons = 0;
         pad.buttons &= ~0x3C1F; // Only clear touch bits, preserve physical controller buttons
         mFingerDownOnA = false;
@@ -1141,6 +1146,8 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                     mStickPointerId = -1;
                     mStickKnobX = mStickBaseX;
                     mStickKnobY = mStickBaseY;
+                    mTouchStickX = 0.0f;
+                    mTouchStickY = 0.0f;
                     pad.stickX = 0.0f;
                     pad.stickY = 0.0f;
                 }
@@ -1305,22 +1312,24 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
             if (dist > stickMaxR && dist > 0.001f) {
                 mStickKnobX = mStickBaseX + (dx / dist) * stickMaxR;
                 mStickKnobY = mStickBaseY + (dy / dist) * stickMaxR;
-                pad.stickX = dx / dist;
-                pad.stickY = -dy / dist;
+                mTouchStickX = dx / dist;
+                mTouchStickY = -dy / dist;
             } else if (dist > deadzone) {
                 mStickKnobX = px;
                 mStickKnobY = py;
                 float norm = (dist - deadzone) / (stickMaxR - deadzone);
-                pad.stickX = (dx / dist) * norm;
-                pad.stickY = -(dy / dist) * norm;
+                mTouchStickX = (dx / dist) * norm;
+                mTouchStickY = -(dy / dist) * norm;
             } else {
                 mStickKnobX = px;
                 mStickKnobY = py;
-                pad.stickX = 0.0f;
-                pad.stickY = 0.0f;
+                mTouchStickX = 0.0f;
+                mTouchStickY = 0.0f;
             }
-            pad.stickX = std::max(-1.0f, std::min(1.0f, pad.stickX));
-            pad.stickY = std::max(-1.0f, std::min(1.0f, pad.stickY));
+            mTouchStickX = std::max(-1.0f, std::min(1.0f, mTouchStickX));
+            mTouchStickY = std::max(-1.0f, std::min(1.0f, mTouchStickY));
+            pad.stickX = mTouchStickX;
+            pad.stickY = mTouchStickY;
         }
         else if (role == TouchRole::DPAD) {
             float dDpadX = px - dpadX;
@@ -1385,13 +1394,17 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
         }
     }
 
-    if (!stickFound && mStickPointerId >= 0) {
-        mStickPointerId = -1;
-        mStickKnobX = mStickBaseX;
-        mStickKnobY = mStickBaseY;
+    if (!stickFound) {
+        if (mStickPointerId >= 0) {
+            mStickPointerId = -1;
+            mStickKnobX = mStickBaseX;
+            mStickKnobY = mStickBaseY;
+            mDirty = true;
+        }
+        mTouchStickX = 0.0f;
+        mTouchStickY = 0.0f;
         pad.stickX = 0.0f;
         pad.stickY = 0.0f;
-        mDirty = true;
     }
 
     if (mTapPendingFrames > 0) {

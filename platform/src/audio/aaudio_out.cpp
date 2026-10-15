@@ -190,10 +190,26 @@ bool openStream(u32 rate) {
     AAudioStreamBuilder_setPerformanceMode(b, AAUDIO_PERFORMANCE_MODE_LOW_LATENCY);
     AAudioStreamBuilder_setSharingMode(b, AAUDIO_SHARING_MODE_SHARED);
     AAudioStreamBuilder_setUsage(b, AAUDIO_USAGE_GAME);
+    AAudioStreamBuilder_setContentType(b, AAUDIO_CONTENT_TYPE_MUSIC);
     AAudioStreamBuilder_setDataCallback(b, dataCallback, nullptr);
     AAudioStreamBuilder_setErrorCallback(b, errorCallback, nullptr);
     aaudio_result_t r = AAudioStreamBuilder_openStream(b, &sStream);
     AAudioStreamBuilder_delete(b);
+    if (r != AAUDIO_OK) {
+        port_log("audio: AAudio LOW_LATENCY open failed (%s), retrying with default mode...", AAudio_convertResultToText(r));
+        if (AAudio_createStreamBuilder(&b) == AAUDIO_OK) {
+            AAudioStreamBuilder_setFormat(b, AAUDIO_FORMAT_PCM_I16);
+            AAudioStreamBuilder_setChannelCount(b, 2);
+            AAudioStreamBuilder_setPerformanceMode(b, AAUDIO_PERFORMANCE_MODE_NONE);
+            AAudioStreamBuilder_setSharingMode(b, AAUDIO_SHARING_MODE_SHARED);
+            AAudioStreamBuilder_setUsage(b, AAUDIO_USAGE_MEDIA);
+            AAudioStreamBuilder_setContentType(b, AAUDIO_CONTENT_TYPE_MUSIC);
+            AAudioStreamBuilder_setDataCallback(b, dataCallback, nullptr);
+            AAudioStreamBuilder_setErrorCallback(b, errorCallback, nullptr);
+            r = AAudioStreamBuilder_openStream(b, &sStream);
+            AAudioStreamBuilder_delete(b);
+        }
+    }
     if (r != AAUDIO_OK) {
         port_log("audio: AAudio open failed: %s", AAudio_convertResultToText(r));
         sStream = nullptr;
@@ -210,8 +226,14 @@ bool openStream(u32 rate) {
     }
     sRingRead.store(sRingWrite.load());
     sResampler = Resampler();
-    AAudioStream_requestStart(sStream);
-    port_log("audio: AAudio %d Hz (source %u Hz), burst %d frames, buffer %d frames", sDeviceRate, rate, burst, AAudioStream_getBufferSizeInFrames(sStream));
+    r = AAudioStream_requestStart(sStream);
+    if (r != AAUDIO_OK) {
+        port_log("audio: AAudio requestStart failed: %s", AAudio_convertResultToText(r));
+        AAudioStream_close(sStream);
+        sStream = nullptr;
+        return false;
+    }
+    port_log("audio: AAudio started: %d Hz (source %u Hz), burst %d frames, buffer %d frames", sDeviceRate, rate, burst, AAudioStream_getBufferSizeInFrames(sStream));
     return true;
 }
 
@@ -250,7 +272,13 @@ extern "C" void port_audio_submit(const s16* rightLeft, u32 frames, u32 rate) {
         AAudioStream_close(sStream);
         sStream = nullptr;
     }
-    if (!sStream && !sOpenFailed) {
+    static int sRetryCounter = 0;
+    if (!sStream) {
+        if (sOpenFailed) {
+            if (++sRetryCounter < 100) return; // Retry audio stream initialization after ~2 seconds
+            sRetryCounter = 0;
+            sOpenFailed = false;
+        }
         sOpenFailed = !openStream(rate);
     }
     if (!sStream) return;

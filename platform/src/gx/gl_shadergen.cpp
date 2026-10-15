@@ -254,22 +254,25 @@ std::string genVertexShader(const ShaderUid& u) {
                 o.w("      if (vrDraw && lpos == vec3(0.0)) lpos = vrEyePos.xyz;\n");
                 o.w("      vec3 ldir;\n      float att = 1.0;\n");
                 if (!atten) {
-                    o.w("      ldir = (dot(lpos, lpos) > 1e-6) ? normalize(lpos - pos) : normalize(-pos);\n");
+                    o.w("      vec3 lv = (dot(lpos, lpos) > 1e-6) ? (lpos - pos) : -pos;\n");
+                    o.w("      ldir = (dot(lv, lv) > 1e-6) ? normalize(lv) : vec3(0.0, 0.0, 1.0);\n");
                 } else if (spot) {
                     o.w("      vec3 lv = (dot(lpos, lpos) > 1e-6) ? (lpos - pos) : -pos;\n");
-                    o.w("      float d2 = dot(lv, lv); float d = sqrt(max(d2, 1e-4)); ldir = lv / d;\n");
-                    o.w("      vec3 dv = (dot(ldirv, ldirv) > 1e-6) ? ldirv : vec3(0.0, 0.0, -1.0);\n");
-                    o.w("      float a = max(0.0, dot(ldir, dv));\n");
+                    o.w("      float d2 = dot(lv, lv); float d = sqrt(max(d2, 1e-4));\n");
+                    o.w("      ldir = (d2 > 1e-6) ? (lv / d) : vec3(0.0, 0.0, 1.0);\n");
+                    o.w("      vec3 dv = (dot(ldirv, ldirv) > 1e-6) ? normalize(ldirv) : vec3(0.0, 0.0, -1.0);\n");
+                    o.w("      float a = clamp(dot(ldir, dv), 0.0, 1.0);\n");
                     o.w("      float distDenom = dot(ldist, vec3(1.0, d, d2));\n");
-                    o.w("      att = (distDenom > 1e-5) ? clamp(dot(lcos, vec3(1.0, a, a * a)) / distDenom, 0.0, 1.0) : 0.0;\n");
+                    o.w("      att = (abs(distDenom) > 1e-5) ? clamp(dot(lcos, vec3(1.0, a, a * a)) / max(abs(distDenom), 1e-5), 0.0, 1.0) : 0.0;\n");
                 } else {
-                    o.w("      ldir = (dot(lpos, lpos) > 1e-6) ? normalize(lpos) : normalize(-pos);\n");
-                    o.w("      vec3 dv = (dot(ldirv, ldirv) > 1e-6) ? ldirv : vec3(0.0, 0.0, -1.0);\n");
-                    o.w("      float a = (dot(nrm, ldir) >= 0.0) ? max(0.0, dot(nrm, dv)) : 0.0;\n");
+                    o.w("      vec3 lv = (dot(lpos, lpos) > 1e-6) ? lpos : -pos;\n");
+                    o.w("      ldir = (dot(lv, lv) > 1e-6) ? normalize(lv) : vec3(0.0, 0.0, 1.0);\n");
+                    o.w("      vec3 dv = (dot(ldirv, ldirv) > 1e-6) ? normalize(ldirv) : vec3(0.0, 0.0, -1.0);\n");
+                    o.w("      float a = (dot(nrm, ldir) >= 0.0) ? clamp(dot(nrm, dv), 0.0, 1.0) : 0.0;\n");
                     o.w("      float distDenom = dot(ldist, vec3(1.0, a, a * a));\n");
-                    o.w("      att = (distDenom > 1e-5) ? clamp(dot(lcos, vec3(1.0, a, a * a)) / distDenom, 0.0, 1.0) : 0.0;\n");
+                    o.w("      att = (abs(distDenom) > 1e-5) ? clamp(dot(lcos, vec3(1.0, a, a * a)) / max(abs(distDenom), 1e-5), 0.0, 1.0) : 0.0;\n");
                 }
-                const char* dif = diffuse == 0 ? "1.0" : diffuse == 1 ? "dot(ldir, nrm)" : "max(0.0, dot(ldir, nrm))";
+                const char* dif = diffuse == 0 ? "1.0" : diffuse == 1 ? "max(0.0, dot(ldir, nrm))" : "max(0.0, dot(ldir, nrm))";
                 o.w("      lit += att * %s * lcol.%s;\n", dif, sw);
                 o.w("    }\n");
             }
@@ -291,7 +294,7 @@ std::string genVertexShader(const ShaderUid& u) {
         }
         if (type == 1) {  // emboss
             uint32_t esrc = (info >> 12) & 7, elight = (info >> 15) & 7;
-            o.w("    vec3 ldir = normalize(L(%u).xyz - pos);\n", elight * 5 + 3);
+            o.w("    vec3 ldir = (dot(L(%u).xyz - pos, L(%u).xyz - pos) > 1e-6) ? normalize(L(%u).xyz - pos) : vec3(0.0, 0.0, 1.0);\n", elight * 5 + 3, elight * 5 + 3, elight * 5 + 3);
             if (esrc < i) {
                 o.w("    v_tex%u = v_tex%u + vec3(dot(ldir, tan), dot(ldir, bin), 0.0);\n  }\n", i, esrc);
             } else {
