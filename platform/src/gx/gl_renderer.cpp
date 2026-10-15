@@ -332,7 +332,7 @@ void Renderer::Impl::init() {
 static const u32 kCacheMagic = 0x32434750;  // "PGC2"
 
 void Renderer::Impl::loadShaderCache() {
-    if (sShaderCachePath.empty()) {
+    if (sShaderCachePath.empty() || cacheOut) {
         return;
     }
     FILE* in = fopen(sShaderCachePath.c_str(), "rb");
@@ -381,7 +381,13 @@ void Renderer::Impl::loadShaderCache() {
 }
 
 void Renderer::Impl::storeBinary(const ShaderUid& uid, GLuint prog) {
-    if (!cacheOut || !prog) {
+    if (!prog) {
+        return;
+    }
+    if (!cacheOut && !sShaderCachePath.empty()) {
+        cacheOut = fopen(sShaderCachePath.c_str(), "ab");
+    }
+    if (!cacheOut) {
         return;
     }
     GLint len = 0;
@@ -1585,7 +1591,12 @@ void Renderer::render(EfbTarget& efb, const EyeView* eye, EfbTarget* hud, HudMod
 bool Renderer::snapshotTaken() const { return sImpl && sImpl->snapshotTaken; }
 int Renderer::hudDrawCount() const { return sImpl ? sImpl->hudDraws : 0; }
 
-void setShaderCachePath(const char* path) { sShaderCachePath = path ? path : ""; }
+void setShaderCachePath(const char* path) {
+    sShaderCachePath = path ? path : "";
+    if (sImpl && sImpl->ready && !sShaderCachePath.empty() && !sImpl->cacheOut) {
+        sImpl->loadShaderCache();
+    }
+}
 
 Renderer& renderer() {
     static Renderer r;

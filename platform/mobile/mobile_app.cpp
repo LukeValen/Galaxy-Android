@@ -28,6 +28,7 @@
 #include "mobile_ui.h"
 #include "port/input.h"
 #include "port/port.h"
+#include <android/sensor.h>
 
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "PetariVR", __VA_ARGS__)
 #define LOGW(...) __android_log_print(ANDROID_LOG_WARN, "PetariVR", __VA_ARGS__)
@@ -35,6 +36,8 @@
 
 extern "C" void port_mem_set_reserved_window(uintptr_t base, size_t size);
 extern "C" void port_boot(const char* dataRoot, const char* saveRoot);
+extern "C" void port_audio_pause(void);
+extern "C" void port_audio_resume(void);
 extern std::atomic<uint64_t> gPresentedFrames;
 
 namespace {
@@ -81,6 +84,59 @@ struct MobileApp {
 };
 
 MobileApp gMobile;
+
+static ASensorManager* sSensorManager = nullptr;
+static const ASensor* sGyroSensor = nullptr;
+static const ASensor* sAccelSensor = nullptr;
+static ASensorEventQueue* sSensorQueue = nullptr;
+
+static void initSensors(android_app* app) {
+    if (!sSensorManager) {
+        sSensorManager = ASensorManager_getInstanceForPackage(nullptr);
+        if (!sSensorManager) {
+            sSensorManager = ASensorManager_getInstance();
+        }
+    }
+    if (sSensorManager && !sSensorQueue) {
+        sGyroSensor = ASensorManager_getDefaultSensor(sSensorManager, ASENSOR_TYPE_GYROSCOPE);
+        sAccelSensor = ASensorManager_getDefaultSensor(sSensorManager, ASENSOR_TYPE_ACCELEROMETER);
+        sSensorQueue = ASensorManager_createEventQueue(sSensorManager, app->looper, 3, nullptr, nullptr);
+        if (sGyroSensor && sSensorQueue) {
+            ASensorEventQueue_enableSensor(sSensorQueue, sGyroSensor);
+            ASensorEventQueue_setEventRate(sSensorQueue, sGyroSensor, 16666);
+            LOGI("Sensors: Enabled gyroscope for motion star pointer");
+        } else if (sAccelSensor && sSensorQueue) {
+            ASensorEventQueue_enableSensor(sSensorQueue, sAccelSensor);
+            ASensorEventQueue_setEventRate(sSensorQueue, sAccelSensor, 16666);
+            LOGI("Sensors: Enabled accelerometer for motion star pointer");
+        }
+    }
+}
+
+static void pollSensors(MobileApp& a) {
+    if (!sSensorQueue || !mobile_ui::get().settings().gyroAiming) return;
+    ASensorEvent event;
+    while (ASensorEventQueue_getEvents(sSensorQueue, &event, 1) > 0) {
+        if (event.type == ASENSOR_TYPE_GYROSCOPE) {
+            float pitchRate = event.vector.x;
+            float yawRate = event.vector.y;
+            float sens = 0.035f;
+            a.pad.pointerX += yawRate * sens;
+            a.pad.pointerY -= pitchRate * sens;
+            a.pad.pointerX = std::max(-1.0f, std::min(1.0f, a.pad.pointerX));
+            a.pad.pointerY = std::max(-1.0f, std::min(1.0f, a.pad.pointerY));
+            a.pad.pointerValid = 1;
+            port_input_set(0, &a.pad);
+        } else if (event.type == ASENSOR_TYPE_ACCELEROMETER) {
+            float tiltX = event.acceleration.y * 0.15f;
+            float tiltY = (event.acceleration.z - 5.0f) * 0.15f;
+            a.pad.pointerX = std::max(-1.0f, std::min(1.0f, tiltX));
+            a.pad.pointerY = std::max(-1.0f, std::min(1.0f, tiltY));
+            a.pad.pointerValid = 1;
+            port_input_set(0, &a.pad);
+        }
+    }
+}
 
 bool isDir(const std::string& path) {
     struct stat st;
@@ -753,10 +809,12 @@ void onAppCmd(android_app* app, int32_t cmd) {
         break;
     case APP_CMD_RESUME:
         LOGI("APP_CMD_RESUME");
+        port_audio_resume();
         port_set_paused(0);
         break;
     case APP_CMD_PAUSE:
         LOGI("APP_CMD_PAUSE");
+        port_audio_pause();
         port_set_paused(1);
         break;
     case APP_CMD_DESTROY:
@@ -850,6 +908,7 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
     app->userData = &a;
     app->onAppCmd = onAppCmd;
     app->onInputEvent = onInput;
+    initSensors(app);
 
     port_mem_set_reserved_window(windowBase, windowSize);
 
@@ -900,9 +959,12 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
             timeout = 0;
         }
 
-        if (!a.windowReady) {
+        if (!a.windowReady || port_is_paused()) {
+            usleep(25000);
             continue;
         }
+
+        pollSensors(a);
 
         // Boot game once window and data are available
         if (!a.gameBooted) {
@@ -1014,6 +1076,9 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
                 // Frame pacing
                 static int64_t lastVkFrameNs = 0;
                 int targetFps = mobile_ui::get().settings().targetFps;
+                if (mobile_ui::get().settings().batterySaver) {
+                    targetFps = 30;
+                }
                 float speed = port_get_game_speed();
                 if (speed > 1.05f) {
                     targetFps = (int)((float)targetFps * speed);
@@ -1043,6 +1108,9 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
 
                 // Check if offscreen target dimensions need to change (e.g. toggled fullscreen or resolution scale)
                 int scaleChoice = mobile_ui::get().settings().renderScale;
+                if (mobile_ui::get().settings().batterySaver) {
+                    scaleChoice = std::min(scaleChoice, 1);
+                }
                 int desiredTargetH = 1080;
                 if (scaleChoice == 0) desiredTargetH = 480;       // Native 480p (max performance)
                 else if (scaleChoice == 1) desiredTargetH = 720;  // 720p HD (smooth performance on budget chips)
@@ -1103,6 +1171,9 @@ extern "C" __attribute__((visibility("default"))) void port_android_main(struct 
                 // Precise frame pacer (60, 90, 120 FPS target, scaled by game speed)
                 static int64_t lastFrameNs = 0;
                 int targetFps = mobile_ui::get().settings().targetFps;
+                if (mobile_ui::get().settings().batterySaver) {
+                    targetFps = 30;
+                }
                 float speed = port_get_game_speed();
                 if (speed > 1.05f) {
                     targetFps = (int)((float)targetFps * speed);

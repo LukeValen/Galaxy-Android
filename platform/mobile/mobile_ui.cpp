@@ -295,6 +295,8 @@ void Settings::load(const std::string& path) {
             else if (!strcmp(key, "haptics")) haptics = (val > 0.5f);
             else if (!strcmp(key, "target_fps")) targetFps = (int)val;  // 60, 90, or 120
             else if (!strcmp(key, "adaptive_fps")) adaptiveFps = (val > 0.5f);
+            else if (!strcmp(key, "battery_saver")) batterySaver = (val > 0.5f);
+            else if (!strcmp(key, "gyro_aiming")) gyroAiming = (val > 0.5f);
             else if (!strcmp(key, "graphics_backend")) {
                 graphicsBackend = (int)val;
                 if (graphicsBackend == 1 && showControls) {
@@ -304,8 +306,8 @@ void Settings::load(const std::string& path) {
         }
     }
     fclose(f);
-    LOGI("Loaded settings: show=%d, full=%d, touch=%d, hud=%d, backend=%d, op=%.2f, scale=%.2f, dpad=%d, fly=%d, skip=%d, infHp=%d, infLives=%d, infBits=%d, spd=%d, lang=%d, res=%d, hap=%d",
-         showControls, fullscreen, fullTouchMode, perfHudMode, graphicsBackend, opacity, scale, showDpad, modFly, modSkipCutscenes, modInfiniteHealth, modInfiniteLives, modInfiniteStarBits, gameSpeed, languageChoice, renderScale, haptics ? 1 : 0);
+    LOGI("Loaded settings: show=%d, full=%d, touch=%d, hud=%d, backend=%d, saver=%d, gyro=%d, op=%.2f, scale=%.2f, dpad=%d, fly=%d, skip=%d, infHp=%d, infLives=%d, infBits=%d, spd=%d, lang=%d, res=%d, hap=%d",
+         showControls, fullscreen, fullTouchMode, perfHudMode, graphicsBackend, batterySaver ? 1 : 0, gyroAiming ? 1 : 0, opacity, scale, showDpad, modFly, modSkipCutscenes, modInfiniteHealth, modInfiniteLives, modInfiniteStarBits, gameSpeed, languageChoice, renderScale, haptics ? 1 : 0);
 }
 
 void Settings::save(const std::string& path) const {
@@ -316,6 +318,8 @@ void Settings::save(const std::string& path) const {
     fprintf(f, "full_touch_mode=%d\n", fullTouchMode ? 1 : 0);
     fprintf(f, "perf_hud=%d\n", perfHudMode);
     fprintf(f, "graphics_backend=%d\n", graphicsBackend);
+    fprintf(f, "battery_saver=%d\n", batterySaver ? 1 : 0);
+    fprintf(f, "gyro_aiming=%d\n", gyroAiming ? 1 : 0);
     fprintf(f, "opacity=%.2f\n", opacity);
     fprintf(f, "scale=%.2f\n", scale);
     fprintf(f, "dynamic_stick=%d\n", dynamicStick ? 1 : 0);
@@ -865,7 +869,7 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
         float contentW = drawerW - padX * 2.0f;
         float contentTop = mPlusEdition ? (112.0f * uiScale) : (68.0f * uiScale);
         float contentBottom = h - 56.0f * uiScale;
-        float totalContentH = (mSettingsTab == 0 || !mPlusEdition) ? (1040.0f * uiScale) : (440.0f * uiScale);
+        float totalContentH = (mSettingsTab == 0 || !mPlusEdition) ? (1320.0f * uiScale) : (440.0f * uiScale);
         float maxScroll = std::max(0.0f, totalContentH - (contentBottom - contentTop));
 
         // 1. Move Gesture for Smooth Scrolling
@@ -1038,8 +1042,27 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                             mSettings.haptics = !mSettings.haptics;
                             showToast(mSettings.haptics ? "Vibration Haptics: ON" : "Vibration Haptics: OFF");
                         }
-                        // Row 19: Return to Setup / Launcher Button
-                        else if (contentRelY >= 1076.0f * uiScale && contentRelY < 1140.0f * uiScale) {
+                        // Row 18: Battery Saver Switch
+                        else if (contentRelY >= 1004.0f * uiScale && contentRelY < 1058.0f * uiScale) {
+                            mSettings.batterySaver = !mSettings.batterySaver;
+                            showToast(mSettings.batterySaver ? "Battery Saver: ON (Cool 30 FPS)" : "Battery Saver: OFF (60+ FPS Performance)");
+                        }
+                        // Row 19: Gyroscope Star Pointer Switch
+                        else if (contentRelY >= 1058.0f * uiScale && contentRelY < 1112.0f * uiScale) {
+                            mSettings.gyroAiming = !mSettings.gyroAiming;
+                            showToast(mSettings.gyroAiming ? "Gyro Aiming: ON (Tilt Device to Aim)" : "Gyro Aiming: OFF");
+                        }
+                        // Row 20: Save Backup (Export / Import)
+                        else if (contentRelY >= 1112.0f * uiScale && contentRelY < 1172.0f * uiScale) {
+                            float midX = drawerX + padX + contentW * 0.5f;
+                            if (px < midX) {
+                                exportSave();
+                            } else {
+                                importSave();
+                            }
+                        }
+                        // Row 22: Return to Setup / Launcher Button
+                        else if (contentRelY >= 1240.0f * uiScale && contentRelY < 1315.0f * uiScale) {
                             mSettingsOpen = false;
                             port_android_exit_to_launcher();
                             return true;
@@ -2198,8 +2221,36 @@ void UIOverlay::render(int screenW, int screenH) {
                 drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.haptics);
             });
 
-            // Row 18: Realtime Hardware & Device Info Card
-            renderRow(1004.0f * uiScale, 64.0f * uiScale, [&](float y) {
+            // Row 18: Battery Saver Switch
+            renderRow(1004.0f * uiScale, 48.0f * uiScale, [&](float y) {
+                drawText("Battery Saver / Cool Mode", drawerX + padX, y + 18.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+                drawText("30 FPS lock, minimizes thermal load", drawerX + padX, y + 34.0f * uiScale, 0.28f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
+                drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.batterySaver);
+            });
+
+            // Row 19: Gyroscope Star Pointer Switch
+            renderRow(1058.0f * uiScale, 48.0f * uiScale, [&](float y) {
+                drawText("Gyro Star Pointer Aiming", drawerX + padX, y + 18.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+                drawText("Tilt phone to steer Star Pointer", drawerX + padX, y + 34.0f * uiScale, 0.28f * uiScale, rgba(0.761f, 0.776f, 0.812f, 0.85f), 0);
+                drawM3Switch(drawerX + drawerW - padX - swW, y + 10.0f * uiScale, swW, swH, mSettings.gyroAiming);
+            });
+
+            // Row 20: Save Data Backup (Downloads)
+            renderRow(1112.0f * uiScale, 56.0f * uiScale, [&](float y) {
+                drawText("Save Data Backup (Downloads)", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+                float btnY = y + 22.0f * uiScale;
+                float b1X0 = drawerX + padX;
+                float b1X1 = drawerX + padX + contentW * 0.5f - 4.0f * uiScale;
+                float b2X0 = drawerX + padX + contentW * 0.5f + 4.0f * uiScale;
+                float b2X1 = drawerX + drawerW - padX;
+                drawRoundRect(b1X0, btnY, b1X1, btnY + 32.0f * uiScale, 12.0f * uiScale, rgba(0.12f, 0.28f, 0.44f, 0.95f));
+                drawText("Export Save", (b1X0 + b1X1) * 0.5f, btnY + 21.0f * uiScale, 0.34f * uiScale, rgba(0.85f, 0.94f, 1.0f, 1.0f), 1);
+                drawRoundRect(b2X0, btnY, b2X1, btnY + 32.0f * uiScale, 12.0f * uiScale, rgba(0.18f, 0.34f, 0.24f, 0.95f));
+                drawText("Import Save", (b2X0 + b2X1) * 0.5f, btnY + 21.0f * uiScale, 0.34f * uiScale, rgba(0.85f, 1.0f, 0.90f, 1.0f), 1);
+            });
+
+            // Row 21: Realtime Hardware & Device Info Card
+            renderRow(1174.0f * uiScale, 64.0f * uiScale, [&](float y) {
                 float cardX0 = drawerX + padX;
                 float cardX1 = drawerX + drawerW - padX;
                 float cardH = 60.0f * uiScale;
@@ -2217,8 +2268,8 @@ void UIOverlay::render(int screenW, int screenH) {
                 drawText(apiLine, cardX0 + 12.0f * uiScale, y + 49.0f * uiScale, 0.24f * uiScale, rgba(0.55f, 0.60f, 0.68f, 0.80f), 0);
             });
 
-            // Row 19: Return to Setup / Launcher Button
-            renderRow(1076.0f * uiScale, 52.0f * uiScale, [&](float y) {
+            // Row 22: Return to Setup / Launcher Button
+            renderRow(1244.0f * uiScale, 52.0f * uiScale, [&](float y) {
                 float bX0 = drawerX + padX;
                 float bX1 = drawerX + drawerW - padX;
                 float btnY = y + 4.0f * uiScale;
@@ -2483,6 +2534,97 @@ void UIOverlay::render(int screenW, int screenH) {
 
     glBindVertexArray(0);
     glDisable(GL_BLEND);
+}
+
+void UIOverlay::setEditMode(bool active) {
+    mEditLayoutMode = active;
+    if (active) {
+        mSettingsOpen = false;
+    }
+    mDirty = true;
+}
+
+void UIOverlay::resetLayoutOffsets() {
+    mSettings.stickOffsetX = 0.0f;
+    mSettings.stickOffsetY = 0.0f;
+    mSettings.buttonOffsetX = 0.0f;
+    mSettings.buttonOffsetY = 0.0f;
+    mSettings.dpadOffsetX = 0.0f;
+    mSettings.dpadOffsetY = 0.0f;
+    if (!mSavePath.empty()) {
+        mSettings.save(mSavePath);
+    }
+    mDirty = true;
+}
+
+bool UIOverlay::exportSave() {
+    std::string internalPath = mSavePath;
+    size_t lastSlash = internalPath.rfind('/');
+    if (lastSlash == std::string::npos) return false;
+    std::string saveRoot = internalPath.substr(0, lastSlash);
+    std::string srcSave = saveRoot + "/title/00010000/524d4750/data/save.bin";
+    std::string dstSave = "/sdcard/Download/GalaxyAndroid_save.bin";
+
+    FILE* in = fopen(srcSave.c_str(), "rb");
+    if (!in) {
+        srcSave = saveRoot + "/save.bin";
+        in = fopen(srcSave.c_str(), "rb");
+    }
+    if (!in) {
+        showToast("No save.bin found to export!");
+        return false;
+    }
+    FILE* out = fopen(dstSave.c_str(), "wb");
+    if (!out) {
+        fclose(in);
+        showToast("Cannot write to Downloads folder!");
+        return false;
+    }
+    char buf[4096];
+    size_t n;
+    while ((n = fread(buf, 1, sizeof(buf), in)) > 0) {
+        fwrite(buf, 1, n, out);
+    }
+    fclose(in);
+    fclose(out);
+    showToast("Exported to Download/GalaxyAndroid_save.bin");
+    return true;
+}
+
+bool UIOverlay::importSave() {
+    std::string internalPath = mSavePath;
+    size_t lastSlash = internalPath.rfind('/');
+    if (lastSlash == std::string::npos) return false;
+    std::string saveRoot = internalPath.substr(0, lastSlash);
+    std::string dstSave = saveRoot + "/title/00010000/524d4750/data/save.bin";
+    std::string srcSave = "/sdcard/Download/GalaxyAndroid_save.bin";
+
+    FILE* in = fopen(srcSave.c_str(), "rb");
+    if (!in) {
+        showToast("Put GalaxyAndroid_save.bin in Downloads!");
+        return false;
+    }
+    std::string dir = saveRoot + "/title/00010000/524d4750/data";
+    mkdir((saveRoot + "/title").c_str(), 0770);
+    mkdir((saveRoot + "/title/00010000").c_str(), 0770);
+    mkdir((saveRoot + "/title/00010000/524d4750").c_str(), 0770);
+    mkdir(dir.c_str(), 0770);
+
+    FILE* out = fopen(dstSave.c_str(), "wb");
+    if (!out) {
+        fclose(in);
+        showToast("Failed to write save.bin!");
+        return false;
+    }
+    char buf[4096];
+    size_t n;
+    while ((n = fread(buf, 1, sizeof(buf), in)) > 0) {
+        fwrite(buf, 1, n, out);
+    }
+    fclose(in);
+    fclose(out);
+    showToast("Imported save.bin from Downloads!");
+    return true;
 }
 
 }  // namespace mobile_ui

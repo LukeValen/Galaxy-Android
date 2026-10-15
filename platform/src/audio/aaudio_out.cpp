@@ -326,3 +326,17 @@ extern "C" int64_t port_audio_queued_ns(void) {
     u32 queued = sRingWrite.load(std::memory_order_relaxed) - sRingRead.load(std::memory_order_acquire);
     return (int64_t)queued * 1000000000ll / sDeviceRate;
 }
+
+extern "C" void port_audio_pause(void) {
+    std::lock_guard<std::mutex> lock(sLock);
+    if (sStream) {
+        AAudioStream_requestPause(sStream);
+    }
+}
+
+extern "C" void port_audio_resume(void) {
+    std::lock_guard<std::mutex> lock(sLock);
+    if (sStream) {
+        AAudioStream_requestStart(sStream);
+    }
+}

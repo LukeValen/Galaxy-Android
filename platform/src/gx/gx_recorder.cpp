@@ -6,6 +6,7 @@
 // model data, or written by the CPU), except single-byte components.
 // Texture memory stays big-endian and is decoded here.
 #include <string.h>
+#include <sys/stat.h>
 
 #include <unordered_map>
 
@@ -1035,6 +1036,36 @@ struct Recorder final : Backend {
             dst += (size_t)w * h;
             p += texLevelSize(key.fmt, w, h);
         }
+
+        // Custom texture pack replacement check:
+        // Loads RGBA8 overrides from /sdcard/GalaxyData/textures/tex_<addr>_<width>x<height>.rgba
+        static bool sCustomTexChecked = false;
+        static bool sCustomTexFolderExists = false;
+        if (!sCustomTexChecked) {
+            sCustomTexChecked = true;
+            struct stat st;
+            sCustomTexFolderExists = (stat("/sdcard/GalaxyData/textures", &st) == 0 && S_ISDIR(st.st_mode));
+            if (sCustomTexFolderExists) {
+                port_log("textures: Custom texture overrides enabled from /sdcard/GalaxyData/textures");
+            }
+        }
+        if (sCustomTexFolderExists) {
+            char customPath[128];
+            snprintf(customPath, sizeof(customPath), "/sdcard/GalaxyData/textures/tex_%08x_%dx%d.rgba", key.addr, key.width, key.height);
+            FILE* cf = fopen(customPath, "rb");
+            if (cf) {
+                fseek(cf, 0, SEEK_END);
+                long sz = ftell(cf);
+                fseek(cf, 0, SEEK_SET);
+                if (sz == (long)(texels * 4)) {
+                    if (fread(img.rgba.data(), 1, sz, cf) == (size_t)sz) {
+                        port_log("textures: Loaded custom replacement texture %s", customPath);
+                    }
+                }
+                fclose(cf);
+            }
+        }
+
         img.version++;
     }
 

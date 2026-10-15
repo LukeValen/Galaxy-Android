@@ -44,6 +44,8 @@ struct Settings {
     // FPS configuration
     int targetFps = 60;  // 60, 90, or 120
     bool adaptiveFps = true;
+    bool batterySaver = false; // 30 FPS thermal protection & power save mode
+    bool gyroAiming = false;   // Gyroscope / accelerometer Star Pointer motion aiming
 
     bool fullTouchMode = true;
     int perfHudMode = 2; // 0 = Off, 1 = FPS, 2 = Full Hardware Stats
@@ -91,6 +93,15 @@ public:
     Settings& settings() { return mSettings; }
     void setPlusEdition(bool plus) { mPlusEdition = plus; }
     bool isPlusEdition() const { return mPlusEdition; }
+
+    // Touch controls edit mode
+    bool isEditModeActive() const { return mEditLayoutMode; }
+    void setEditMode(bool active);
+    void resetLayoutOffsets();
+
+    // Save Data Import / Export
+    bool exportSave();
+    bool importSave();
 
 private:
     UIOverlay();
