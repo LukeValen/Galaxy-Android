@@ -1,10 +1,11 @@
 ---
 title: Galaxy Android - Technical Architecture & Engineering Deep-Dive
-description: In-depth technical architecture of Galaxy Android, detailing the ARM64 native porting process, 32-bit address space reservation, OpenGL ES 3.2 graphics pipeline, Hor+ ultrawide rendering, and asset cooking.
+description: In-depth technical architecture of Galaxy Android, detailing the ARM64 native porting process, 32-bit address space reservation, Vulkan 1.0 & OpenGL ES 3.2 graphics pipelines, Hor+ ultrawide rendering, frame telemetry, and asset cooking.
 tags:
   - architecture
   - android
   - arm64
+  - vulkan
   - opengl-es
   - decompilation
   - technical
@@ -35,14 +36,17 @@ Galaxy Android is a **100% native Android ARM64 port** of the classic 2007 gravi
 │  ┌──────────────────────┬─────────────────────────────────────┐ │
 │  │   Original Gameplay  │         Android Platform Layer       │ │
 │  │   & Scene Logic      ├─────────────────────────────────────┤ │
-│  │   (Decompiled C++)   │  - GLES 3.2 GX Renderer             │ │
-│  │                      │  - AAudio Low-Latency Mixer         │ │
-│  │  MEM1 (0x80000000)   │  - Multi-touch AInputQueue Engine   │ │
-│  │  MEM2 (0x90000000)   │  - Hor+ Ultrawide Camera Mod        │ │
-│  │                      │  - THP Video Decoder Engine         │ │
+│  │   (Decompiled C++)   │  - Vulkan 1.0 & GLES 3.2 Renderer   │ │
+│  │                      │  - Native Vulkan UI Overlay Pipeline│ │
+│  │  MEM1 (0x80000000)   │  - AAudio Low-Latency 48kHz Mixer   │ │
+│  │  MEM2 (0x90000000)   │  - Multi-touch AInputQueue Engine   │ │
+│  │                      │  - Gyro ASensorManager Transformer  │ │
+│  │                      │  - Real-Time Perf Telemetry Hooks   │ │
+│  │                      │  - Hor+ Ultrawide Camera Mod        │ │
+│  │                      │  - Dual Persistent Save Mirror      │ │
 │  └──────────────────────┴─────────────────────────────────────┘ │
 ├─────────────────────────────────────────────────────────────────┤
-│       Cooked Game Assets (/sdcard/GalaxyData/game)              │
+│       Cooked Game Assets (/sdcard/GalaxyData/files)             │
 │       (Little-endian textures, models, archives, audio)         │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -62,7 +66,7 @@ The original game code routinely casts pointers directly to 32-bit unsigned inte
 Galaxy Android uses a two-stage preloading strategy to guarantee that `0x80000000` through `0xA0000000` is strictly reserved and available:
 
 1. **`wrap.sh` Launcher Hook:**
-   - Android permits an application package to include a `wrap.sh` script inside `lib/arm64-v8a/`.
+   - Android permits an application package to include an executable `wrap.sh` script inside `lib/arm64-v8a/`.
    - The OS executes `wrap.sh` before initializing the Android Runtime (ART) process.
    - `wrap.sh` exports `LD_PRELOAD` pointing to a tiny helper library: [`libreserve.so`](../platform/mobile/libreserve.so).
 
@@ -77,22 +81,28 @@ Galaxy Android uses a two-stage preloading strategy to guarantee that `0x8000000
 
 ---
 
-## 3. Dual Graphics Subsystem: Vulkan 1.1 & OpenGL ES 3.2
+## 3. Dual Graphics Subsystem: Vulkan 1.0 & OpenGL ES 3.2
 
 The GameCube/Wii utilized the **GX** fixed/programmable pipeline, featuring up to 16 Texture Environment (TEV) stages, indirect texturing, alpha testing, and custom display list formats. Galaxy Android supports dual rendering backends:
 
-### OpenGL ES 3.2 Backend
-- **Shader Generation:** TEV stages are dynamically compiled into modern GLSL ES 3.2 fragment shaders. Color/alpha blending registers (`c0`, `c1`, `c2`, `prev`) map to vector registers in the shader.
-- **Indirect Texturing:** Wii matrix-driven coordinate warping (used extensively for water surfaces, heat haze, and star fields) is translated into dependent texture lookups in GLSL.
-- **Display Lists:** Geometry streams are parsed into standard OpenGL ES Vertex Buffer Objects (VBOs) and Vertex Array Objects (VAOs).
-
-### Vulkan 1.1 Hardware Backend
+### A. Vulkan 1.0 Hardware Backend (Primary & Recommended)
+- **Unified Pipeline State Objects (PSO):** Pre-compiles graphic pipelines to eliminate driver runtime validation overhead during draw calls.
 - **Offscreen EFB Framebuffers:** Offscreen color (`VK_FORMAT_R8G8B8A8_UNORM`) and depth/stencil attachments allocated with `VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT`.
 - **Dynamic Depth Probing:** Runtime querying of supported physical device optimal tiling features to select `VK_FORMAT_D32_SFLOAT_S8_UINT`, `VK_FORMAT_D24_UNORM_S8_UINT`, or `VK_FORMAT_D16_UNORM`.
-- **Presentation Blit Pipeline:** Features a high-speed blit pipeline (`vkCmdBlitImage`) from EFB render targets to swapchain images. Supported blit features and linear vs nearest filtering capabilities are validated at runtime via `vkGetPhysicalDeviceFormatProperties` with automatic fallback to clear passes.
-- **Lifecycle & Swapchain Resilience:** Dynamic handling of `VK_ERROR_OUT_OF_DATE_KHR` and `VK_SUBOPTIMAL_KHR` with complete synchronization teardown and rebuild during screen rotation, folding, or multi-window splits.
+- **Swapchain Blitting & Pillarboxing:** Procedural fullscreen quad presentation pass (`mPresentPipeline`) blitting the offscreen target image into the swapchain with clean pillarbox borders.
+- **Native Vulkan UI Pipeline:** Dedicated Vulkan graphics pipeline (`mUiPipeline`) rendering touch controls, laser tethers, and settings drawer widgets directly into the swapchain render pass. Operates with an inverted Vulkan NDC projection matrix:
+  $$\text{proj}[5] = \frac{2.0}{\text{height}}, \quad \text{proj}[13] = -1.0$$
+- **Startup Target Safety:** Strict `hasFrame()` guard prevents sampling uninitialized render targets (`VK_IMAGE_LAYOUT_UNDEFINED`) during initial boot, eliminating GPU validation faults and driver crashes.
 
-### Hor+ Dynamic Ultrawide Projection
+### B. OpenGL ES 3.2 Backend (Fallback)
+- **Shader Generation:** TEV stages are dynamically compiled into modern GLSL ES 3.2 fragment shaders. Color/alpha blending registers (`c0`, `c1`, `c2`, `prev`) map to vector registers in the shader.
+- **Texture Buffer Emulation:** Utilizes 2D texture fetch (`sampler2D` / `usampler2D`) for rows, records, and state tables (`s_rows`, `s_recs`, `s_st`, `s_vtxRec`), completely eliminating dependencies on vertex SSBOs.
+- **ARM Mali & Qualcomm Compatibility:**
+  - Standard compliant: accommodates ARM Mali's 0 vertex shader storage blocks (`GL_MAX_VERTEX_SHADER_STORAGE_BLOCKS = 0`).
+  - Adapts to conservative 64 KB texture buffer limits on Mali while exploiting up to 128 MB on Qualcomm Adreno.
+  - Zero-vector division protection preventing NaN/INF rim lighting over-exposure on Mali GPUs.
+
+### C. Hor+ Dynamic Ultrawide Projection
 The original game supported 4:3 and anamorphic 16:9 aspect ratios. On modern smartphones (19.5:9, 20:9, 21:9):
 - **Camera Frustum:** The 3D projection matrix is dynamically recalculated using the horizontal expansion method (Hor+). The vertical field of view remains constant, while horizontal FOV is expanded:
   $$\tan\left(\frac{\text{FOV}_h}{2}\right) = \tan\left(\frac{\text{FOV}_v}{2}\right) \times \text{Aspect Ratio}$$
@@ -100,7 +110,56 @@ The original game supported 4:3 and anamorphic 16:9 aspect ratios. On modern sma
 
 ---
 
-## 4. Asset Cooker Pipeline (`cook.py`)
+## 4. Real-Time Hardware Performance Telemetry
+
+Galaxy Android features an integrated performance instrumentation pipeline:
+
+```
+[Game Thread] ────> port_perf_frame_begin() ───> Logic & GX Recording ───> port_perf_frame_work_done()
+                                                                                   │
+[Render Thread] ──> port_host_time_ns() ───────> vkr.render() + present() ──> port_perf_render(cpuNs, 0)
+                                                                                   │
+[HUD Overlay] <────────────────────────────────────────────────────────────────────┘
+```
+
+- **Metrics Tracked:**
+  - Engine Simulation & GX Command Recording Duration
+  - CPU-side Render Submission & Presentation Latency
+  - Active Display Refresh & Average FPS
+  - Real-time CPU core utilization percentage
+  - Resident Set Size (RSS) RAM usage
+- **Pill HUD Overlay:** Displays live metrics (`45.3 FPS  22.1 ms  CPU 20%  RAM 588 MB`) with configurable display modes (Off, FPS only, Full Stats).
+
+---
+
+## 5. Motion & Gyroscope Sensor Architecture
+
+Galaxy Android samples Android's `ASensorManager` at high frequency to emulate the Wii Remote's optical pointer and motion sensors:
+
+### Android Landscape Coordinate Transform (`ROTATION_90`)
+In landscape orientation, physical phone rotation maps to screen coordinates as follows:
+$$\text{rotH} = \text{event.vector.x} - \text{event.vector.z} \times 0.35f$$
+$$\text{rotV} = \text{event.vector.y}$$
+
+- **Azimuth / Yaw Tracking:** Compensates for device roll-yaw coupling when tilting the phone horizontally.
+- **Invert X / Invert Y Options:** Independent direction inversion multipliers configured via the Settings drawer.
+- **Accelerometer Fallback:** Accelerometer vector integration provides intuitive motion aiming on hardware lacking dedicated gyroscope sensors.
+
+---
+
+## 6. Save Data Subsystem & Dual Mirroring
+
+To protect game progress against OS clearing, uninstalls, or cache purges:
+1. **Primary Internal Storage:** Saves write directly to the emulated Wii NAND path:
+   `/data/user/0/com.openport.galaxyandroid/files/nand/title/00010000/524d4745/data/GameData.bin`
+2. **External Mirror:** Simultaneously mirrored to:
+   `/sdcard/GalaxyData/saves/GameData.bin`
+3. **Auto-Recovery on Boot:** If internal app data is wiped or reinstalled, the boot sequence automatically detects the mirrored file and restores it into NAND before initializing the file system.
+4. **Export to Downloads:** One-tap export to `/sdcard/Download/GameData.bin` for cross-device backup.
+
+---
+
+## 7. Asset Cooker Pipeline (`cook.py`)
 
 Original Wii disc partitions contain big-endian files (`.arc`, `.bcsv`, `.kcl`, `.thp`, `.brres`). Byte-swapping every asset on a mobile CPU during gameplay would introduce stutter.
 
@@ -113,35 +172,27 @@ The asset cooker ([`tools/cook/cook.py`](../tools/cook/cook.py)):
 
 ---
 
-## 5. Audio Subsystem (AAudio)
+## 8. Audio Subsystem (AAudio)
 
 - Original audio routines relied on the Wii DSP mixer and AX voice manager.
 - Galaxy Android implements a low-latency PCM software mixer that writes directly to an Android `AAudioStream`.
 - Features:
-  - 48,000 Hz, 16-bit stereo output.
+  - 48,000 Hz, 16-bit stereo output resampled from 32,000 Hz DSP mixer.
   - Ring-buffer latency under 15 milliseconds.
   - Handles dynamic interactive music layers (e.g. adding brass or percussion instruments during speed-up or Yoshi riding).
+  - Graceful missing-resource handling (e.g. unreferenced developer test files like `B109take_0.aw`).
 
 ---
 
-## 6. Input & Android Lifecycle
-
-- Managed through `android_native_app_glue` within `platform/mobile/mobile_app.cpp`.
-- Event processing runs in a non-blocking `AInputQueue` loop during `APP_CMD_INPUT_CHANGED`.
-- Touch points are tracked with unique finger pointer IDs to support multi-touch (simultaneous joystick movement, jump, spin attack, and screen pointer aiming).
-- Gamepad events map `AMOTION_EVENT_AXIS_X/Y` and key codes (`AKEYCODE_BUTTON_A`, etc.) to Wii Remote / Nunchuk state registers.
-
----
-
-## 7. Comparative Performance
+## 9. Comparative Performance
 
 | Metric | Emulation (Dolphin on Android) | Galaxy Android (Native Port) |
 |---|---|---|
 | **CPU Execution** | JIT Dynamic Recompiler | Native ARM64 Machine Code |
-| **GPU Execution** | State-tracking overhead | Direct OpenGL ES 3.2 calls |
-| **Memory Footprint** | ~1.8 GB RAM | ~380 MB RAM |
+| **GPU Execution** | State-tracking overhead | Direct Vulkan 1.0 / GLES 3.2 |
+| **Memory Footprint** | ~1.8 GB RAM | ~580 MB RAM |
 | **Battery Draw** | High (~12-15W) | Low (~4-6W) |
-| **Frame Rate** | Variable 30-50 FPS on mid-range | Solid 60 / 120 FPS |
+| **Frame Rate** | Variable 30-50 FPS on mid-range | Solid 60 FPS (Up to 120 FPS) |
 
 ---
 

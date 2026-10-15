@@ -1,12 +1,13 @@
 ---
 title: Galaxy Android - Control Schemes and Input Mapping
-description: Complete input reference guide for Galaxy Android, detailing touch controls, pointer tracking, physical Bluetooth/USB gamepads, and custom layout configuration.
+description: Complete input reference guide for Galaxy Android, detailing touch controls, pointer tracking, physical Bluetooth/USB gamepads, motion gyroscope aiming, and custom layout configuration.
 tags:
   - android
   - controls
   - gamepad
   - touch-overlay
   - star-pointer
+  - gyroscope
   - input-mapping
   - galaxy-android
 ---
@@ -16,7 +17,7 @@ tags:
 > **Acknowledgements & References:**
 > Galaxy Android builds upon the Wii controller abstractions reconstructed in the [Petari Decompilation Project](https://github.com/SMGCommunity/Petari) and the custom platform input layer pioneered by [bigmak94/GalaxyQuest](https://github.com/bigmak94/GalaxyQuest). We extend our deepest thanks to both projects and their contributors.
 
-Galaxy Android translates Android touchscreen interactions and standard Bluetooth/USB controller events into native Wii Remote + Nunchuk signals with zero emulation latency.
+Galaxy Android translates Android touchscreen interactions, physical Bluetooth/USB controller events, and hardware gyroscope motion into native Wii Remote + Nunchuk signals with zero emulation latency.
 
 ---
 
@@ -66,7 +67,22 @@ The on-screen overlay is engineered with a modern frosted translucent dark glass
 
 ---
 
-## 2. Physical Gamepads (Bluetooth & USB)
+## 2. Motion & Gyroscope Aiming
+
+Galaxy Android features motion controls powered by Android's `ASensorManager`:
+
+### Star Pointer Gyro Aiming
+- **Natural Motion Tracking:** Move and tilt your phone to steer the star pointer across the cosmos. Gather star bits and target pull stars effortlessly.
+- **Invert X / Invert Y Controls:** Independent horizontal and vertical direction toggles in Row 19b of the Settings drawer let you configure aiming to match your natural muscle memory.
+- **Accelerometer Fallback:** Devices without a dedicated gyroscope sensor automatically switch to accelerometer vector tracking.
+
+### Special Stage Tilting (Star Ball & Surfing Ray)
+- **Touch Virtual Tilt (Default):** Touch and slide on the virtual direction ring to steer the Star Ball and Ray with responsive precision.
+- **Device Gyroscope (Supported Devices):** Tilt your phone naturally to balance the Star Ball or carve turns on the Surfing Ray.
+
+---
+
+## 3. Physical Gamepads (Bluetooth & USB)
 
 Galaxy Android automatically detects physical gamepads connected via Bluetooth or USB-C (including Xbox Wireless, PlayStation DualShock 4 / DualSense, Switch Pro Controller, Razer Kishi, and Backbone One).
 
@@ -90,16 +106,7 @@ Galaxy Android automatically detects physical gamepads connected via Bluetooth o
 
 ---
 
-## 3. Motion & Tilt Controls
-
-Special stages (such as the **Star Ball** and **Surfing Ray**) originally relied on the Wii Remote's built-in accelerometer:
-
-1. **Touch Virtual Tilt (Default):** Touch and slide on the virtual direction ring to steer the Star Ball and Ray with responsive precision.
-2. **Device Gyroscope (Supported Devices):** Uses Android's internal `ASensorManager` gyroscope. Tilt your phone naturally to balance the Star Ball or carve turns on the Surfing Ray.
-
----
-
-## 4. Customizing Controls & Layout Editor
+## 4. Customizing Controls & Settings Drawer
 
 Open the slide-out **Material 3 Settings Drawer** by tapping the gear icon (`⚙`) at the top-left edge of the screen:
 
@@ -107,7 +114,9 @@ Open the slide-out **Material 3 Settings Drawer** by tapping the gear icon (`⚙
 - **Touch Controls Visibility:** Toggle on/off entirely when using a physical gamepad or playing on a dedicated gaming handheld (Retroid Pocket, Odin, Logitech G Cloud).
 - **Button Opacity:** Adjust between 25%, 50%, 75%, and 100% transparency.
 - **Button Scale:** Scale all touch buttons between 0.75x and 1.5x for phones or tablets.
-- **Layout Editor:** Tap **"Edit On-Screen Layout"** to drag any button or joystick to your preferred position. Positions are saved permanently to `settings.ini`.
+- **Layout Editor:** Tap **"Edit On-Screen Layout"** to drag any button or joystick cluster to your preferred position. Positions are saved permanently to `settings.ini`.
+- **Gyro Aiming & Axis Inversion:** Toggle gyro aiming, Invert X, and Invert Y.
+- **Performance HUD Mode:** Switch between Off, FPS Only, and Full Hardware Stats.
 
 ---
 
