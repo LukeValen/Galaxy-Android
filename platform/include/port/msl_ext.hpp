@@ -171,7 +171,8 @@ namespace std {
     template < class Result, class Type, class Arg >
     inline const_mem_fun1_t< Result, Type, Arg > mem_func(Result (Type::*p)(Arg) const) { return const_mem_fun1_t< Result, Type, Arg >(p); }
 
-    // ---- negators / function pointers ------------------------------------------
+#if !defined(_LIBCPP_VERSION) || (_LIBCPP_VERSION >= 150000 && !defined(_LIBCPP_ENABLE_CXX20_REMOVED_NEGATORS))
+    // ---- negators ---------------------------------------------------------------
     template < class Predicate >
     class unary_negate : public unary_function< typename Predicate::argument_type, bool > {
     public:
@@ -186,6 +187,7 @@ namespace std {
     inline unary_negate< Predicate > not1(const Predicate& p) {
         return unary_negate< Predicate >(p);
     }
+#endif
 
     template < class Arg, class Result >
     class pointer_to_unary_function : public unary_function< Arg, Result > {
