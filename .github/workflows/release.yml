@@ -33,9 +33,11 @@ jobs:
 
       - name: Set up Android NDK & SDK Tools
         uses: nttld/setup-ndk@v1
+        id: setup-ndk
         with:
           ndk-version: r25c
           add-to-path: true
+          link-to-sdk: true
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -49,6 +51,16 @@ jobs:
 
       - name: Build Native Game Engine (libgame.so)
         run: |
+          NDK_DIR="${{ steps.setup-ndk.outputs.ndk-path }}"
+          if [ -z "$NDK_DIR" ] || [ ! -d "$NDK_DIR" ]; then
+            if [ -d "/usr/local/lib/android/sdk/ndk/25.2.9519653" ]; then
+              NDK_DIR="/usr/local/lib/android/sdk/ndk/25.2.9519653"
+            fi
+          fi
+          export ANDROID_NDK_HOME="$NDK_DIR"
+          export ANDROID_NDK="$NDK_DIR"
+          export ANDROID_NDK_ROOT="$NDK_DIR"
+          echo "Using Android NDK: $ANDROID_NDK_HOME"
           mkdir -p build-mobile
           cmake -S . -B build-mobile -G Ninja \
             -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
@@ -61,6 +73,14 @@ jobs:
       - name: Package Galaxy Android APK
         run: |
           mkdir -p out-mobile
+          NDK_DIR="${{ steps.setup-ndk.outputs.ndk-path }}"
+          if [ -z "$NDK_DIR" ] || [ ! -d "$NDK_DIR" ]; then
+            if [ -d "/usr/local/lib/android/sdk/ndk/25.2.9519653" ]; then
+              NDK_DIR="/usr/local/lib/android/sdk/ndk/25.2.9519653"
+            fi
+          fi
+          export ANDROID_NDK_HOME="$NDK_DIR"
+          export ANDROID_NDK="$NDK_DIR"
           export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
           python3 package_mobile_apk.py
 
