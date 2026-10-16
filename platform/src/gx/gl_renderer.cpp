@@ -981,6 +981,7 @@ void Renderer::Impl::doCopy(const Item& it, EfbTarget& src, Renderer& r, bool vr
         }
         if (mask) {
             glClear(mask);
+            glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
         }
     }
 }
