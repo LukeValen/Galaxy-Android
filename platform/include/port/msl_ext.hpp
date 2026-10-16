@@ -49,6 +49,7 @@ namespace std {
         typedef Arg2 second_argument_type;
         typedef Result result_type;
     };
+#endif // unary_function and binary_function base classes
 
     // ---- binders ------------------------------------------------------------
     template < class Func >
@@ -159,7 +160,6 @@ namespace std {
     inline mem_fun_ref_t< Result, Type > mem_fun_ref(Result (Type::*p)()) { return mem_fun_ref_t< Result, Type >(p); }
     template < class Result, class Type, class Arg >
     inline mem_fun1_ref_t< Result, Type, Arg > mem_fun_ref(Result (Type::*p)(Arg)) { return mem_fun1_ref_t< Result, Type, Arg >(p); }
-#endif // C++98 adaptor base classes
 
     // MSL spelling of mem_fun (available across all compilers).
     template < class Result, class Type >
