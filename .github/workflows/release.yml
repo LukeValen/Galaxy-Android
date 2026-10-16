@@ -65,7 +65,7 @@ jobs:
           if [ ! -f "$ANDROID_NDK_HOME/sources/third_party/shaderc/libs/c++_static/arm64-v8a/libshaderc.a" ]; then
             echo "Compiling libshaderc.a via ndk-build..."
             "$ANDROID_NDK_HOME/ndk-build" -C "$ANDROID_NDK_HOME/sources/third_party/shaderc" \
-              NDK_PROJECT_PATH=. APP_BUILD_SCRIPT=Android.mk APP_ABI=arm64-v8a APP_STL=c++_static -j$(nproc)
+              NDK_PROJECT_PATH=. APP_BUILD_SCRIPT=Android.mk APP_ABI=arm64-v8a APP_STL=c++_static APP_PLATFORM=android-30 libshaderc_combined -j$(nproc)
           fi
           mkdir -p build-mobile
           cmake -S . -B build-mobile -G Ninja \

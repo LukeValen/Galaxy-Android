@@ -160,7 +160,7 @@ if(ANDROID)
         message(STATUS "libshaderc.a not found in NDK; auto-building via ndk-build...")
         execute_process(
           COMMAND "${NDK_BUILD_CMD}" -C "${ANDROID_NDK}/sources/third_party/shaderc"
-                  NDK_PROJECT_PATH=. APP_BUILD_SCRIPT=Android.mk APP_ABI=${ANDROID_ABI} APP_STL=c++_static
+                  NDK_PROJECT_PATH=. APP_BUILD_SCRIPT=Android.mk APP_ABI=${ANDROID_ABI} APP_STL=c++_static APP_PLATFORM=android-30 libshaderc_combined
           RESULT_VARIABLE NDK_BUILD_RES
         )
       endif()
