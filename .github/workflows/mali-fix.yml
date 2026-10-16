@@ -1,8 +1,8 @@
-name: Build character specular v2
+name: Build Mali light attenuation v3
 on:
   workflow_dispatch:
   push:
-    branches: [fix/character-specular-v2]
+    branches: [fix/mali-light-attenuation-v3]
 permissions:
   contents: read
 jobs:
@@ -24,7 +24,7 @@ jobs:
           python3 package_mobile_apk.py
       - uses: actions/upload-artifact@v4
         with:
-          name: galaxy-character-specular-v2
+          name: galaxy-mali-light-v3
           path: |
             out-mobile/GalaxyAndroid.apk
             build-mobile/libgame.so
