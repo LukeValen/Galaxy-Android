@@ -509,9 +509,11 @@ std::string genVulkanFragmentShader(const ShaderUid& u) {
         {
             uint32_t ca = (cc >> 12) & 15, cb = (cc >> 8) & 15, cc2 = (cc >> 4) & 15, cd = cc & 15;
             uint32_t aa = (ac >> 13) & 7, ab = (ac >> 10) & 7, ac2 = (ac >> 7) & 7, ad = (ac >> 4) & 7;
-            o.w("  tevin_a = ivec4(%s, %s) & 255;\n", kColorIn[ca], kAlphaIn[aa]);
-            o.w("  tevin_b = ivec4(%s, %s) & 255;\n", kColorIn[cb], kAlphaIn[ab]);
-            o.w("  tevin_c = ivec4(%s, %s) & 255;\n", kColorIn[cc2], kAlphaIn[ac2]);
+            // Some Mali compilers mishandle a bitwise mask applied to an entire ivec4.
+            // Mask the color and alpha operands separately before constructing TEV inputs.
+            o.w("  tevin_a = ivec4((%s) & 255, (%s) & 255);\n", kColorIn[ca], kAlphaIn[aa]);
+            o.w("  tevin_b = ivec4((%s) & 255, (%s) & 255);\n", kColorIn[cb], kAlphaIn[ab]);
+            o.w("  tevin_c = ivec4((%s) & 255, (%s) & 255);\n", kColorIn[cc2], kAlphaIn[ac2]);
             o.w("  tevin_d = ivec4(%s, %s);\n", kColorIn[cd], kAlphaIn[ad]);
         }
 
