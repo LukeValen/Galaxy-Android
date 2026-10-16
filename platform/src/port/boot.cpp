@@ -1,6 +1,7 @@
 // Brings up the emulated Wii environment and starts the game's main().
 #include "port/port.h"
 #include <sys/stat.h>
+#include <string>
 
 extern "C" void port_os_time_init(void);
 extern "C" void port_gx_init(void);
