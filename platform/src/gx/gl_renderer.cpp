@@ -824,6 +824,16 @@ void Renderer::Impl::workerMain() {
         }
         int64_t t0 = port_host_time_ns();
         workerBuilder.build(std::move(frame), *out);
+        static bool loggedCharacterMaterials = false;
+        if (!loggedCharacterMaterials && out->items.size() > 150) {
+            for (const Item& it : out->items) {
+                if (it.type == IT_DRAW && it.player) {
+                    logItems(*out);
+                    loggedCharacterMaterials = true;
+                    break;
+                }
+            }
+        }
         port_perf_prepare(port_host_time_ns() - t0);
         static const bool perfLog = debugEnv("PETARI_PERFLOG") != nullptr;
         if (perfLog && out->number % 600 == 0) {

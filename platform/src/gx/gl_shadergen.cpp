@@ -727,7 +727,7 @@ std::string genFragmentShader(const ShaderUid& u) {
     o.w("  o_color = clamp(outc, 0.0, 1.0);\n");
     o.w("  if (u_maliDebug == 1) o_color.rgb = debugTexture;\n");
     o.w("  else if (u_maliDebug == 2) o_color.rgb = clamp(v_clr0.rgb, 0.0, 1.0);\n");
-    o.w("  else if (u_maliDebug == 3) o_color.rgb = vec3(outi.rgb) / 255.0;\n");
+    o.w("  else if (u_maliDebug == 3) o_color.rgb = clamp(v_clr1.rgb, 0.0, 1.0);\n");
     // Debug views (PETARI_GLVIS=uv|tex): texture coordinates / raw texture 0.
     const char* vis = debugEnv("PETARI_GLVIS");
     if (vis && u.numTexGens > 0) {

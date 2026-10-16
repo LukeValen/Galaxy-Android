@@ -2304,7 +2304,7 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
 
             renderRow(1292.0f * uiScale, 58.0f * uiScale, [&](float y) {
                 drawText("Mali Test (OpenGL ES)", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
-                const char* debugOpts[4] = {"Normal", "Texture", "Light", "TEV"};
+                const char* debugOpts[4] = {"Normal", "Texture", "Light0", "Light1"};
                 drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, debugOpts, 4, mSettings.maliDebugMode);
             });
 

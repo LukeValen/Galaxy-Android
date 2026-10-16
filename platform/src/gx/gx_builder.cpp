@@ -715,6 +715,22 @@ void logItems(const Prepared& p) {
                 port_log("items:   player tev: order %06x %06x; color %06x %06x %06x %06x; alpha %06x %06x %06x %06x; ksel %06x %06x %06x %06x",
                          u.tevOrder[0], u.tevOrder[1], u.tevColor[0], u.tevColor[1], u.tevColor[2], u.tevColor[3], u.tevAlpha[0], u.tevAlpha[1],
                          u.tevAlpha[2], u.tevAlpha[3], u.ksel[0], u.ksel[1], u.ksel[2], u.ksel[3]);
+                if (it.firstOrdinal < p.vtxRec.size()) {
+                    size_t rec = (size_t)p.vtxRec[it.firstOrdinal] * kRecWords;
+                    if (rec + kRecLights < recs.size()) {
+                        size_t light = recs[rec + kRecLights];
+                        if ((light + 44) * 4 <= states.size()) {
+                            const float* s = states.data() + light * 4;
+                            port_log("items:   player light: mat0 %.2f %.2f %.2f; mat1 %.2f %.2f %.2f; amb0 %.2f %.2f %.2f; amb1 %.2f %.2f %.2f",
+                                     s[160], s[161], s[162], s[164], s[165], s[166], s[168], s[169], s[170], s[172], s[173], s[174]);
+                            for (int l = 0; l < 4; l++) {
+                                const float* v = s + l * 20;
+                                port_log("items:   light%d: rgb %.2f %.2f %.2f; cos %.3f %.3f %.3f; dist %.3f %.3f %.3f; pos %.3f %.3f %.3f; dir %.3f %.3f %.3f",
+                                         l, v[0], v[1], v[2], v[4], v[5], v[6], v[8], v[9], v[10], v[12], v[13], v[14], v[16], v[17], v[18]);
+                            }
+                        }
+                    }
+                }
             }
         }
     }
