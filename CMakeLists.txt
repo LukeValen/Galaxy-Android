@@ -153,18 +153,20 @@ if(ANDROID)
   set(GLUE_DIR ${ANDROID_NDK}/sources/android/native_app_glue)
 
   if(TARGET_MOBILE)
-    set(SHADERC_CANDIDATE "${ANDROID_NDK}/sources/third_party/shaderc/libs/c++_static/${ANDROID_ABI}/libshaderc.a")
-    if(NOT EXISTS "${SHADERC_CANDIDATE}")
-      set(SHADERC_CANDIDATE "${ANDROID_NDK}/sources/third_party/shaderc/libs/c++_shared/${ANDROID_ABI}/libshaderc.a")
-    endif()
-    if(NOT EXISTS "${SHADERC_CANDIDATE}")
-      file(GLOB_RECURSE SHADERC_MATCHES "/usr/local/lib/android/sdk/ndk/*/sources/third_party/shaderc/libs/c++_static/${ANDROID_ABI}/libshaderc.a")
-      if(SHADERC_MATCHES)
-        list(GET SHADERC_MATCHES 0 SHADERC_CANDIDATE)
+    set(SHADERC_STATIC "${ANDROID_NDK}/sources/third_party/shaderc/libs/c++_static/${ANDROID_ABI}/libshaderc.a")
+    if(NOT EXISTS "${SHADERC_STATIC}")
+      find_program(NDK_BUILD_CMD NAMES ndk-build ndk-build.cmd PATHS "${ANDROID_NDK}" NO_DEFAULT_PATH)
+      if(NDK_BUILD_CMD)
+        message(STATUS "libshaderc.a not found in NDK; auto-building via ndk-build...")
+        execute_process(
+          COMMAND "${NDK_BUILD_CMD}" -C "${ANDROID_NDK}/sources/third_party/shaderc"
+                  NDK_PROJECT_PATH=. APP_BUILD_SCRIPT=Android.mk APP_ABI=${ANDROID_ABI} APP_STL=c++_static
+          RESULT_VARIABLE NDK_BUILD_RES
+        )
       endif()
     endif()
     target_include_directories(game PRIVATE ${GLUE_DIR} ${ANDROID_NDK}/sources/third_party/shaderc/include)
-    target_link_libraries(game PRIVATE EGL GLESv3 aaudio vulkan "${SHADERC_CANDIDATE}")
+    target_link_libraries(game PRIVATE EGL GLESv3 aaudio vulkan "${SHADERC_STATIC}")
   else()
     # The Khronos OpenXR loader (tools/fetch_openxr.sh puts it there).
     set(OPENXR_DIR ${CMAKE_SOURCE_DIR}/third_party/openxr/prefab/modules)
