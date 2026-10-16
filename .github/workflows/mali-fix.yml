@@ -1,8 +1,8 @@
-name: Build Mali character fix
+name: Build character specular v2
 on:
   workflow_dispatch:
   push:
-    branches: [fix/mali-character-materials]
+    branches: [fix/character-specular-v2]
 permissions:
   contents: read
 jobs:
@@ -24,7 +24,7 @@ jobs:
           python3 package_mobile_apk.py
       - uses: actions/upload-artifact@v4
         with:
-          name: galaxy-mali-character-fix
+          name: galaxy-character-specular-v2
           path: |
             out-mobile/GalaxyAndroid.apk
             build-mobile/libgame.so
