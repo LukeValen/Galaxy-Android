@@ -717,6 +717,18 @@ void logItems(const Prepared& p) {
                          u.tevAlpha[2], u.tevAlpha[3], u.ksel[0], u.ksel[1], u.ksel[2], u.ksel[3]);
                 if (it.firstOrdinal < p.vtxRec.size()) {
                     size_t rec = (size_t)p.vtxRec[it.firstOrdinal] * kRecWords;
+                    if (rec + kRecPixel < recs.size()) {
+                        size_t pixel = recs[rec + kRecPixel];
+                        if ((pixel + 8) * 4 <= states.size()) {
+                            const float* v = states.data() + pixel * 4;
+                            for (int q = 0; q < 8; q++) {
+                                port_log("items:   player %s%d: rgba %.2f %.2f %.2f %.2f",
+                                         q < 4 ? "tevReg" : "konst", q & 3,
+                                         v[4 * q] * 255.0f, v[4 * q + 1] * 255.0f,
+                                         v[4 * q + 2] * 255.0f, v[4 * q + 3] * 255.0f);
+                            }
+                        }
+                    }
                     if (rec + kRecLights < recs.size()) {
                         size_t light = recs[rec + kRecLights];
                         if ((light + 44) * 4 <= states.size()) {
