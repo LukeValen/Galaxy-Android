@@ -1392,8 +1392,8 @@ void Renderer::Impl::execute(EfbTarget& efb, const EyeView* eye, EfbTarget* hud,
             if (loc == debugLocs.end()) {
                 loc = debugLocs.emplace(prog, glGetUniformLocation(prog, "u_maliDebug")).first;
             }
-            glUniform1i(loc->second, gGlDebugMode);
         }
+        glUniform1i(debugLocs[prog], it.player ? gGlDebugMode : 0);
         glUniform1ui(ordinalLoc, it.firstOrdinal);
         for (int u = 0; u < 8; u++) {
             u32 tr = it.tex[u];
