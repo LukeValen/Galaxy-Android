@@ -499,7 +499,7 @@ std::string genFragmentShader(const ShaderUid& u) {
     o.w("flat in uint v_pix;\n");
     o.w("in vec4 v_clr0;\nin vec4 v_clr1;\n");
     for (uint32_t i = 0; i < u.numTexGens; i++) o.w("in vec3 v_tex%u;\n", i);
-    o.w("in float v_viewz;\nin float v_gxz;\nout vec4 o_color;\n");
+    o.w("in float v_viewz;\nin float v_gxz;\nout vec4 o_color;\nuniform int u_maliDebug;\n");
     o.w("vec2 projUv(vec3 t) { if (isnan(t.z) || isinf(t.z) || abs(t.z) < 1e-6) return (any(isnan(t.xy)) || any(isinf(t.xy))) ? vec2(0.0) : t.xy; vec2 r = t.xy / t.z; return (any(isnan(r)) || any(isinf(r))) ? vec2(0.0) : r; }\n");
     o.w("int idot(ivec3 a, ivec3 b) { ivec3 t = a * b; return t.x + t.y + t.z; }\n");
     if (u.cutaway) {
@@ -531,7 +531,7 @@ std::string genFragmentShader(const ShaderUid& u) {
     o.w("  vec4 indMtx[6];\n  for (int i = 0; i < 6; i++) indMtx[i] = fetch_st(v_pix + 20u + uint(i));\n");
     o.w("  ivec4 prev = ivec4(round(tevReg[0] * 255.0));\n  ivec4 c0 = ivec4(round(tevReg[1] * 255.0));\n");
     o.w("  ivec4 c1 = ivec4(round(tevReg[2] * 255.0));\n  ivec4 c2 = ivec4(round(tevReg[3] * 255.0));\n");
-    o.w("  ivec4 tex = ivec4(0);\n  ivec4 ras = ivec4(0);\n  ivec3 kc = ivec3(0);\n  int ka = 0;\n");
+    o.w("  ivec4 tex = ivec4(0);\n  ivec4 ras = ivec4(0);\n  vec3 debugTexture = vec3(0.0);\n  ivec3 kc = ivec3(0);\n  int ka = 0;\n");
     o.w("  ivec4 tevin_a, tevin_b, tevin_c, tevin_d;\n");
     o.w("  const ivec3 comp16 = ivec3(1, 256, 0);\n  const ivec3 comp24 = ivec3(1, 256, 65536);\n");
     if (u.zTex) {
@@ -587,6 +587,7 @@ std::string genFragmentShader(const ShaderUid& u) {
             o.w("  vec4 sampleTex%u = texture(s_tex%u, %s)%s;\n", s, map, uv.c_str(), swapString(u, tswap).c_str());
             o.w("  vec4 safeTex%u = (any(isnan(sampleTex%u)) || any(isinf(sampleTex%u))) ? vec4(0.0) : clamp(sampleTex%u, 0.0, 1.0);\n", s, s, s, s);
             o.w("  tex = ivec4(round(safeTex%u * 255.0));\n", s);
+            o.w("  debugTexture = safeTex%u.rgb;\n", s);
             if (u.zTex) {
                 o.w("  ztex = tex;\n");
             }
@@ -724,6 +725,9 @@ std::string genFragmentShader(const ShaderUid& u) {
     // Without an EFB alpha channel the blend still uses this alpha; the
     // renderer masks alpha writes instead.
     o.w("  o_color = clamp(outc, 0.0, 1.0);\n");
+    o.w("  if (u_maliDebug == 1) o_color.rgb = debugTexture;\n");
+    o.w("  else if (u_maliDebug == 2) o_color.rgb = clamp(v_clr0.rgb, 0.0, 1.0);\n");
+    o.w("  else if (u_maliDebug == 3) o_color.rgb = vec3(outi.rgb) / 255.0;\n");
     // Debug views (PETARI_GLVIS=uv|tex): texture coordinates / raw texture 0.
     const char* vis = debugEnv("PETARI_GLVIS");
     if (vis && u.numTexGens > 0) {

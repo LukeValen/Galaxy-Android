@@ -28,6 +28,7 @@ extern "C" void port_headless_write_png(const char* path, const unsigned char* r
 namespace gpu {
 
 int gDebugStopAfterDraws = debugEnv("PETARI_GLSTOP") ? atoi(debugEnv("PETARI_GLSTOP")) : -1;
+int gGlDebugMode = 0;
 
 // ---------------------------------------------------------------------------
 // Deferred GL deletes (texture images die on whichever thread drops them)
@@ -208,6 +209,7 @@ struct Renderer::Impl {
     void storeBinary(const ShaderUid& uid, GLuint prog);
     void startCompiler();
     std::unordered_map<GLuint, GLint> ordinalLocs;
+    std::unordered_map<GLuint, GLint> debugLocs;
     GLint firstOrdinalLoc(GLuint prog) {
         auto it = ordinalLocs.find(prog);
         if (it != ordinalLocs.end()) return it->second;
@@ -1376,6 +1378,11 @@ void Renderer::Impl::execute(EfbTarget& efb, const EyeView* eye, EfbTarget* hud,
             glUseProgram(prog);
             lastProgram = prog;
             ordinalLoc = firstOrdinalLoc(prog);
+            auto loc = debugLocs.find(prog);
+            if (loc == debugLocs.end()) {
+                loc = debugLocs.emplace(prog, glGetUniformLocation(prog, "u_maliDebug")).first;
+            }
+            glUniform1i(loc->second, gGlDebugMode);
         }
         glUniform1ui(ordinalLoc, it.firstOrdinal);
         for (int u = 0; u < 8; u++) {

@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "port/port.h"
+#include "gx/gl_renderer.h"
 #include "xr/ui_font.h"
 
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "MobileUI", __VA_ARGS__)
@@ -293,6 +294,7 @@ void Settings::load(const std::string& path) {
             else if (!strcmp(key, "graphics_backend")) {
                 graphicsBackend = (int)val;
             }
+            else if (!strcmp(key, "mali_debug_mode")) maliDebugMode = std::max(0, std::min(3, (int)val));
         }
     }
     fclose(f);
@@ -308,6 +310,7 @@ void Settings::save(const std::string& path) const {
     fprintf(f, "full_touch_mode=%d\n", fullTouchMode ? 1 : 0);
     fprintf(f, "perf_hud=%d\n", perfHudMode);
     fprintf(f, "graphics_backend=%d\n", graphicsBackend);
+    fprintf(f, "mali_debug_mode=%d\n", maliDebugMode);
     fprintf(f, "battery_saver=%d\n", batterySaver ? 1 : 0);
     fprintf(f, "gyro_aiming=%d\n", gyroAiming ? 1 : 0);
     fprintf(f, "gyro_invert_x=%d\n", gyroInvertX ? 1 : 0);
@@ -352,6 +355,7 @@ UIOverlay& UIOverlay::get() {
 void UIOverlay::setSavePath(const std::string& path) {
     mSavePath = path;
     mSettings.load(path);
+    gpu::gGlDebugMode = mSettings.maliDebugMode;
     applyGameSpeed(mSettings.gameSpeed);
     applyLanguage(mSettings.languageChoice);
 }
@@ -866,7 +870,7 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
         float contentW = drawerW - padX * 2.0f;
         float contentTop = mPlusEdition ? (112.0f * uiScale) : (68.0f * uiScale);
         float contentBottom = h - 56.0f * uiScale;
-        float totalContentH = (mSettingsTab == 0 || !mPlusEdition) ? (1320.0f * uiScale) : (440.0f * uiScale);
+        float totalContentH = (mSettingsTab == 0 || !mPlusEdition) ? (1450.0f * uiScale) : (440.0f * uiScale);
         float maxScroll = std::max(0.0f, totalContentH - (contentBottom - contentTop));
 
         // 1. Move Gesture for Smooth Scrolling
@@ -1069,8 +1073,16 @@ bool UIOverlay::handleInput(const AInputEvent* event, PortPadState& pad, int& sp
                                 importSave();
                             }
                         }
+                        // Temporary GLES diagnostic for character materials.
+                        else if (contentRelY >= 1292.0f * uiScale && contentRelY < 1350.0f * uiScale) {
+                            float segW = contentW / 4.0f;
+                            int idx = (int)((px - (drawerX + padX)) / segW);
+                            mSettings.maliDebugMode = std::max(0, std::min(3, idx));
+                            gpu::gGlDebugMode = mSettings.maliDebugMode;
+                            showToast("Mali test: OpenGL ES only");
+                        }
                         // Row 22: Return to Setup / Launcher Button
-                        else if (contentRelY >= 1298.0f * uiScale && contentRelY < 1375.0f * uiScale) {
+                        else if (contentRelY >= 1360.0f * uiScale && contentRelY < 1437.0f * uiScale) {
                             mSettingsOpen = false;
                             port_android_exit_to_launcher();
                             return true;
@@ -2290,8 +2302,14 @@ void UIOverlay::generateVertices(int screenW, int screenH, std::vector<UIVertex>
                 drawText(apiLine, cardX0 + 12.0f * uiScale, y + 49.0f * uiScale, 0.24f * uiScale, rgba(0.55f, 0.60f, 0.68f, 0.80f), 0);
             });
 
+            renderRow(1292.0f * uiScale, 58.0f * uiScale, [&](float y) {
+                drawText("Mali Test (OpenGL ES)", drawerX + padX, y + 14.0f * uiScale, 0.38f * uiScale, rgba(0.902f, 0.906f, 0.922f, 1.0f), 0);
+                const char* debugOpts[4] = {"Normal", "Texture", "Light", "TEV"};
+                drawSegmentedGroup(drawerX + padX, y + 22.0f * uiScale, contentW, 34.0f * uiScale, debugOpts, 4, mSettings.maliDebugMode);
+            });
+
             // Row 22: Return to Setup / Launcher Button
-            renderRow(1298.0f * uiScale, 52.0f * uiScale, [&](float y) {
+            renderRow(1360.0f * uiScale, 52.0f * uiScale, [&](float y) {
                 float bX0 = drawerX + padX;
                 float bX1 = drawerX + drawerW - padX;
                 float btnY = y + 4.0f * uiScale;

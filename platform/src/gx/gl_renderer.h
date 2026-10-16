@@ -12,6 +12,9 @@
 
 namespace gpu {
 
+// GLES diagnostic: 0=normal, 1=texture, 2=raster lighting, 3=TEV before fog.
+extern int gGlDebugMode;
+
 // An "EFB": color + depth-stencil textures the game's draws render into.
 struct EfbTarget {
     GLuint fbo = 0, color = 0, depth = 0;
