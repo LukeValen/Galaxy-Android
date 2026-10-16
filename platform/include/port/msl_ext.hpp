@@ -34,6 +34,9 @@ namespace std {
     }
 
     // ---- C++98 adaptor base classes ---------------------------------------
+    // libc++ in C++20 mode removed these in LLVM 15+ (150000). In older libc++ (e.g. NDK r25c),
+    // they are already declared by <functional>.
+#if !defined(_LIBCPP_VERSION) || (_LIBCPP_VERSION >= 150000 && !defined(_LIBCPP_ENABLE_CXX17_REMOVED_UNARY_BINARY_FUNCTION))
     template < class Arg, class Result >
     struct unary_function {
         typedef Arg argument_type;
@@ -156,8 +159,9 @@ namespace std {
     inline mem_fun_ref_t< Result, Type > mem_fun_ref(Result (Type::*p)()) { return mem_fun_ref_t< Result, Type >(p); }
     template < class Result, class Type, class Arg >
     inline mem_fun1_ref_t< Result, Type, Arg > mem_fun_ref(Result (Type::*p)(Arg)) { return mem_fun1_ref_t< Result, Type, Arg >(p); }
+#endif // C++98 adaptor base classes
 
-    // MSL spelling of mem_fun.
+    // MSL spelling of mem_fun (available across all compilers).
     template < class Result, class Type >
     inline mem_fun_t< Result, Type > mem_func(Result (Type::*p)()) { return mem_fun_t< Result, Type >(p); }
     template < class Result, class Type >
@@ -167,6 +171,7 @@ namespace std {
     template < class Result, class Type, class Arg >
     inline const_mem_fun1_t< Result, Type, Arg > mem_func(Result (Type::*p)(Arg) const) { return const_mem_fun1_t< Result, Type, Arg >(p); }
 
+#if !defined(_LIBCPP_VERSION) || (_LIBCPP_VERSION >= 150000 && !defined(_LIBCPP_ENABLE_CXX17_REMOVED_UNARY_BINARY_FUNCTION))
     // ---- negators / function pointers ------------------------------------------
     template < class Predicate >
     class unary_negate : public unary_function< typename Predicate::argument_type, bool > {
@@ -212,5 +217,6 @@ namespace std {
     inline pointer_to_binary_function< Arg1, Arg2, Result > ptr_fun(Result (*p)(Arg1, Arg2)) {
         return pointer_to_binary_function< Arg1, Arg2, Result >(p);
     }
+#endif // negators / function pointers
 
 }  // namespace std
