@@ -171,7 +171,6 @@ namespace std {
     template < class Result, class Type, class Arg >
     inline const_mem_fun1_t< Result, Type, Arg > mem_func(Result (Type::*p)(Arg) const) { return const_mem_fun1_t< Result, Type, Arg >(p); }
 
-#if !defined(_LIBCPP_VERSION) || (_LIBCPP_VERSION >= 150000 && !defined(_LIBCPP_ENABLE_CXX17_REMOVED_UNARY_BINARY_FUNCTION))
     // ---- negators / function pointers ------------------------------------------
     template < class Predicate >
     class unary_negate : public unary_function< typename Predicate::argument_type, bool > {
@@ -217,6 +216,5 @@ namespace std {
     inline pointer_to_binary_function< Arg1, Arg2, Result > ptr_fun(Result (*p)(Arg1, Arg2)) {
         return pointer_to_binary_function< Arg1, Arg2, Result >(p);
     }
-#endif // negators / function pointers
 
 }  // namespace std
