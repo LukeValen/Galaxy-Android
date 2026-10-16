@@ -723,7 +723,7 @@ void logItems(const Prepared& p) {
                             const float* s = states.data() + light * 4;
                             port_log("items:   player light: mat0 %.2f %.2f %.2f; mat1 %.2f %.2f %.2f; amb0 %.2f %.2f %.2f; amb1 %.2f %.2f %.2f",
                                      s[160], s[161], s[162], s[164], s[165], s[166], s[168], s[169], s[170], s[172], s[173], s[174]);
-                            for (int l = 0; l < 4; l++) {
+                            for (int l = 0; l < 8; l++) {
                                 const float* v = s + l * 20;
                                 port_log("items:   light%d: rgb %.2f %.2f %.2f; cos %.3f %.3f %.3f; dist %.3f %.3f %.3f; pos %.3f %.3f %.3f; dir %.3f %.3f %.3f",
                                          l, v[0], v[1], v[2], v[4], v[5], v[6], v[8], v[9], v[10], v[12], v[13], v[14], v[16], v[17], v[18]);
